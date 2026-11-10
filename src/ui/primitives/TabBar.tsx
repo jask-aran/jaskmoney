@@ -37,7 +37,6 @@ export function TabBar(props: { active: TabId; items: { id?: SectionId; text: st
                     │
                   </text>
                 ) : null}
-                {/* Bold by S, not a <b> swapped for plain text: the label stays one node. */}
                 <text ref={regionRef(`bar.${tab.id}`, "bar")} onMouseDown={onPointer(pageScope, () => ui.switchTab(tab.id))} fg={look().fg} bg={look().bg ?? theme.mantle}>
                   <S fg={look().fg} bg={look().bg ?? theme.mantle} bold={look().bold}>{` ${tab.label} `}</S>
                 </text>
@@ -46,9 +45,6 @@ export function TabBar(props: { active: TabId; items: { id?: SectionId; text: st
           }}
         </For>
       </box>
-      {/* One text per item so each can take focus and clicks. Only the last
-          shrinks, wrapping by word out of sight, so a narrow bar drops whole
-          words at its end as the single label it replaced did. */}
       <box flexDirection="row" flexShrink={1} overflow="hidden" backgroundColor={theme.mantle}>
         <For each={items()}>
           {(item, i) => {
@@ -71,6 +67,5 @@ export function TabBar(props: { active: TabId; items: { id?: SectionId; text: st
   )
 }
 
-/** Only page scopes and the bar accept clicks through the shared chrome. */
 const PAGE_SCOPES: ReadonlySet<ScopeId> = new Set<ScopeId>(["bar", "overview", "overview.range", "manager.accounts", "manager.txns", "manager.merchants", "budgets.categories", "budgets.plan", "budgets.chart", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.appearance", "settings.database", "settings.up", "settings.ai"])
 const pageScope = (scope: ScopeId) => PAGE_SCOPES.has(scope)

@@ -17,15 +17,9 @@ type AccountInput = OverviewModel & OverviewLayout & { focused: () => SectionId 
 
 export function createAccountsCard(input: AccountInput) {
   const { position, saverChanges, change30, stackWidth, hasSavers, saversFull } = input
-  // Available is what Up shows: the balance less what's pending. The
-  // balance's note is the pending money and how many rows it is.
   const available = () => position().spendingBalance
   const saverChange = (accountId: number) => saverChanges().find((c) => c.accountId === accountId)?.change ?? 0
   const saversTotalChange = () => saverChanges().reduce((sum, c) => sum + c.change, 0)
-  // Accounts as a ledger, a line each: the label at the left, the value at
-  // the row's end, a note or 30 days' change in the column before it.
-  // Available and Net position (bold) open and close it; the savers
-  // between, under their heading, set apart by blank lines.
   const ACCOUNT_VALUE = 11
   const ACCOUNT_CHANGE = 10
   const accountLines = createMemo((): Span[][] => {

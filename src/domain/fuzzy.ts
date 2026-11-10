@@ -1,4 +1,3 @@
-/** Case-insensitive subsequence score; larger scores are better. */
 export function fuzzyScore(query: string, text: string): number | null {
   const q = query.toLowerCase()
   const label = text.toLowerCase()

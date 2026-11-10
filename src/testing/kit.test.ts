@@ -30,7 +30,6 @@ test("preload isolates settings and resets stores; reset removes nested session 
   expect(data.getDb()).toBeNull()
   expect(data.state).toEqual(initialData)
   expect(ui.state).toEqual(initialUi)
-  // New defaults must not retain mutable objects from the previous reset.
   ui.setState("selectedIds", 2, true)
   data.setState("uiPrefs", "weekStart", "sunday")
   data.reset()
@@ -48,8 +47,6 @@ test("preload isolates credential siblings and fallback paths and blanks all cre
   expect(directory).toBe(process.env.HOME!)
   expect(existsSync(join(directory, "credentials.json"))).toBe(false)
   writeFileSync(join(directory, "credentials.json"), '{"token":"test-only"}')
-  // Leave a sibling file behind; the next test must receive a new directory.
-  // Without overrides, everything is in ~/.jaskmoney (inside the test HOME).
   delete process.env.JASKMONEY_CONFIG
   expect(defaultSettingsConfigPath()).toBe(join(directory, ".jaskmoney", "settings.json"))
   const db = process.env.JASKMONEY_DB

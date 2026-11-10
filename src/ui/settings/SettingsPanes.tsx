@@ -23,23 +23,11 @@ import { AI_USES, USES } from "../../ai/catalog"
 import { executorRow } from "../../state/executorDialog"
 import { executorSignedIn } from "../../ai/executor"
 
-/**
- * Settings' panes share one layout (SectionCard `inset`): every line is a
- * ListRow, so all text starts one cell in from the border and a cursor's
- * wash runs border to border; subheadings are ink.heading. Every pane takes
- * focus: a click on it activates it, a click on a row also puts the cursor
- * there.
- */
-
-/** A row's text width in a pane `width` columns wide: the borders, the
- * row's inset and a cell before the right border. */
 const rowWidth = (width: number) => Math.max(10, width - 4)
 
-/** Where a click on a pane counts: the page, or a pane of it (not under a dialog). */
 const SETTINGS_SCOPES = new Set<ScopeId>(["bar", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.up", "settings.ai", "settings.appearance", "settings.database"])
 export const onSettings = (action: (event: MouseEvent) => void) => onPointer((scope) => SETTINGS_SCOPES.has(scope), action)
 
-/** A line of a pane that isn't a cursor row: a subheading, a note, a blank. */
 export function Line(props: { spans: Span[] }) {
   return <ListRow cursor={false} bg={theme.canvas} spans={props.spans} />
 }
@@ -48,35 +36,21 @@ export const heading = (label: string, n?: number, note = ""): Span[] => [
   ...(n != null ? [{ text: ` ${n}${note}`, fg: ink.note }] : []),
 ]
 
-/** Between Taxonomy's columns. */
 export const COLUMN_GAP = 2
 
-/** A row's state: what colours its mark. */
 type RowState = "good" | "caution" | "bad" | "off" | "plain"
 const STATE_INK: Record<RowState, () => string> = { good: () => tone.good, caution: () => tone.caution, bad: () => tone.bad, off: () => ink.faint, plain: () => ink.label }
-/** A row's mark, in its state's colour: its icon with icons on, else a dot
- * (hollow when off; `dot` for a row with no state, e.g. "›" for an action).
- * `spin`: a spinner frame in its place while something runs. */
 const mark = (icon: SettingIcon, state: RowState, spin = "", dot?: string): Span =>
   ({ text: `${spin || settingMark(icon, dot ?? (state === "off" ? "○" : "●"))} `, fg: spin ? ink.figure : STATE_INK[state]() })
-/** A row's icon as decoration (icons on), or nothing. */
 const decoration = (icon: SettingIcon, fg = ink.label): Span[] => { const glyph = settingMark(icon); return glyph ? [{ text: `${glyph} `, fg }] : [] }
-/** A setting's value: a toggle as a dot and its words, a choice with a dot
- * per option (the set one filled). */
 function settingValue(view: { value: string; on?: boolean; choice?: { index: number; count: number } }, fg = ink.figure): Span[] {
   if (view.on != null) return [{ text: view.on ? "● " : "○ ", fg: view.on ? ink.figure : ink.faint }, { text: view.value, fg: view.on ? fg : ink.label }]
   if (!view.choice) return [{ text: view.value, fg }]
   return [{ text: view.value, fg }, { text: "  ", fg }, ...Array.from({ length: view.choice.count }, (_, i): Span => ({ text: i === view.choice!.index ? "●" : "○", fg: i === view.choice!.index ? ink.figure : ink.faint }))]
 }
 
-/** Rules & Filters' height: borders, two headings, a blank between, and
- * each list's rows (one line when empty). */
 export const rulesHeight = () => 2 + 1 + Math.max(1, data.state.rules.length) + 1 + 1 + Math.max(1, data.state.savedFilters.length)
 
-/** Rules and the saved filters they match, in one card: Rules (ordered,
- * last match wins) above Saved filters. Each list is its own section (its
- * keys and cursor); j/k run on from one into the other. A rule's mark says
- * whether it runs: on, off, or its filter broken or gone. */
 export function RulesPane(props: { focused: boolean; width: number }) {
   const rulesActive = () => ui.state.settingsActive && ui.state.settingsSection === "rules"
   const filtersActive = () => ui.state.settingsActive && ui.state.settingsSection === "filters"
@@ -122,11 +96,8 @@ export function RulesPane(props: { focused: boolean; width: number }) {
   </SectionCard>
 }
 
-/** Appearance's width beside Database & Import: its labels and longest values. */
 export const APPEARANCE_WIDTH = 40
 
-/** Appearance: each preference with its icon; the theme with its colours,
- * a toggle as on or off, a choice with which of its options is set. */
 export function AppearancePane(props: { focused: boolean; width: number; height?: number }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "appearance"
   const ctx = () => ({ ...data.state.uiPrefs, icons: data.state.icons })
@@ -144,8 +115,6 @@ export function AppearancePane(props: { focused: boolean; width: number; height?
   </SectionCard>
 }
 
-/** The database: where it is and what it holds, then its settings and
- * actions as rows (always shown; the cursor only while active). */
 export function DatabasePane(props: { focused: boolean; width: number; height?: number }) {
   const info = () => data.state.dbInfo
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "database"
@@ -160,7 +129,6 @@ export function DatabasePane(props: { focused: boolean; width: number; height?: 
     n(info()?.categoryCount, "category", "categories"), n(info()?.tagCount, "tag"), n(info()?.ruleCount, "rule"),
   ].join(" · ")
   const ctx = () => ({ weekStart: data.state.weekStart, profiles: data.state.importProfiles.length, demo: data.state.demo, imports: data.state.imports.length })
-  // The counts sit under the path, past the database's icon.
   const indent = () => decoration("database").length ? "  " : ""
   return <SectionCard inset title={SETTINGS_SECTION_LABELS.database} focused={props.focused} active={active()} height={props.height ?? DATABASE_ROWS.length + 5} width={props.width}>
     <Line spans={[...decoration("database", ink.figure), { text: truncate(where(), rowWidth(props.width) - indent().length), fg: ink.label }]} />
@@ -178,13 +146,8 @@ export function DatabasePane(props: { focused: boolean; width: number; height?: 
   </SectionCard>
 }
 
-/** Up Bank's height: borders and its rows, and the last sync's error. */
 const upHeight = () => 6 + (data.state.dbInfo?.upLastError ? 1 : 0)
 
-/** Up Bank: the token, sync and which accounts are linked; enter on a row
- * opens it (the token's dialog, a sync now, the accounts dialog). The token
- * itself is never rendered. Each row's mark says how it stands; Sync's
- * spins while a sync runs. */
 export function UpPane(props: { focused: boolean; width: number; height?: number }) {
   const info = () => data.state.dbInfo
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "up"
@@ -194,7 +157,6 @@ export function UpPane(props: { focused: boolean; width: number; height?: number
   const spin = spinnerFrame(() => data.state.upSyncing)
   const synced = () => data.state.upSyncing ? "syncing…" : (() => { const ago = syncAgo(info()?.upLastSyncedAt ?? null, Date.now()); return ago ? `synced ${ago}` : "not synced yet" })()
   const syncState = (): RowState => !connection() ? "off" : info()?.upLastError ? "bad" : info()?.upLastSyncedAt ? "good" : "off"
-  // How many sync; which are off when that fits, else just how many.
   const linked = () => {
     if (!accounts().length) return "none yet · they appear after a sync"
     const syncing = `${accounts().length - off().length} of ${accounts().length} syncing`
@@ -212,19 +174,12 @@ export function UpPane(props: { focused: boolean; width: number; height?: number
   </SectionCard>
 }
 
-/** AI models' height: two columns (Models and Sources beside Uses) from
- * AI_TWO_COLUMNS, else stacked, a blank between the inputs and the uses. */
 const AI_TWO_COLUMNS = 84
 const aiHeight = (width: number) => {
-  // Each block is its heading and rows: Models, Sources (Executor), Uses.
   const models = 1 + AI_ROWS.length, sources = 1 + 1, uses = 1 + AI_USES.length
   return 2 + (width - 2 >= AI_TWO_COLUMNS ? Math.max(models + sources, uses) : models + sources + 1 + uses)
 }
 
-/** Settings › AI models: what goes in (the models and how each is
- * connected, the sources: Executor for Gmail and more), then what comes
- * out (the uses and the model doing each); enter opens any one's dialog.
- * j runs in that order (aiPaneRows): down the first column, then the second. */
 export function AiPane(props: { focused: boolean; width: number }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "ai"
   const ctx = () => aiContext(data)
@@ -234,7 +189,6 @@ export function AiPane(props: { focused: boolean; width: number }) {
   const at = (i: number) => active() && ui.state.aiCursor === i
   const pick = (i: number) => onSettings(() => { ui.activateSettings("ai"); ui.setState({ aiCursor: i }) })
   const two = () => props.width - 2 >= AI_TWO_COLUMNS
-  // Two columns: the inputs and the uses half each.
   const firstWidth = () => two() ? Math.floor((props.width - 2 - COLUMN_GAP) / 2) : props.width - 2
   const secondWidth = () => two() ? props.width - 2 - COLUMN_GAP - firstWidth() : props.width - 2
   const valueWidth = (width: number) => Math.max(8, width - 2 - 15)

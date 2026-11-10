@@ -6,11 +6,11 @@ emails once you connect Gmail, and turns a question in plain words into a filter
 the money goes: spending by day and over time, cash flow, balances, savers, a calendar and your subscriptions, against a
 budget's pace.
 
-![The Overview's charts and date ranges, a filter in Transactions, and Settings](docs/screenshots/overview.gif)
+![The Overview's charts and date ranges, a filter in Transactions, and Settings](docs/overview.gif)
 
 | Transactions | Budgets | Settings |
 | --- | --- | --- |
-| <a href="docs/screenshots/transactions.png"><img src="docs/screenshots/transactions.png" alt="Transactions"></a> | <a href="docs/screenshots/budgets.png"><img src="docs/screenshots/budgets.png" alt="Budgets"></a> | <a href="docs/screenshots/settings.png"><img src="docs/screenshots/settings.png" alt="Settings"></a> |
+| <a href="docs/transactions.png"><img src="docs/transactions.png" alt="Transactions"></a> | <a href="docs/budgets.png"><img src="docs/budgets.png" alt="Budgets"></a> | <a href="docs/settings.png"><img src="docs/settings.png" alt="Settings"></a> |
 
 ## Install
 
@@ -86,20 +86,20 @@ The setup's tour, on its made-up data.
 
 **Filter** (`/`): words, `amt:`, `cat:` and `date:`, combined, filtering as you type.
 
-![Filtering transactions as you type](docs/screenshots/filter.gif)
+![Filtering transactions as you type](docs/filter.gif)
 
 **Smart search** (`?`): ask in words; Jev writes the filter, yours to read and edit.
 
-![Smart search writing a filter from a question](docs/screenshots/ask.gif)
+![Smart search writing a filter from a question](docs/ask.gif)
 
 **Suggestions**: what Amazon and eBay rows bought, from your order emails, and a category suggested for each row from
 that, the merchant and the amount.
 
-![Category suggestions for Amazon and eBay rows](docs/screenshots/suggest.gif)
+![Category suggestions for Amazon and eBay rows](docs/suggest.gif)
 
 **Charts** (`h`/`l`): the Overview's views: spending, cash flow, balances, savers, the calendar and your subscriptions.
 
-![The Overview chart views](docs/screenshots/chart.gif)
+![The Overview chart views](docs/chart.gif)
 
 ## Development
 

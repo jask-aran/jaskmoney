@@ -29,6 +29,5 @@ test("accept-all's preview names the rows going to each category ", async () => 
   const frame = rendered.captureCharFrame()
   expect(frame).toMatch(/Test food\s+3/)
   expect(frame).toMatch(/Coles ×2, Coles refund/)
-  // The 50% row stays out of the preview (it shows in the table behind).
   expect(frame.split("\n").find((l) => l.includes("Coles ×2"))).not.toContain("Unsure")
 })

@@ -6,17 +6,11 @@ import type { Category, Tag, Transaction } from "../domain/types"
 import { tone } from "../theme"
 import type { PickerItem } from "./settingsForm"
 
-/** What finding transactions can start from: an existing tag (and the
- * detected group it stands for), a detected group no tag covers yet, or a
- * name just typed. */
 export type TagChoice =
   | { kind: "tag"; tag: Tag; group?: TagGroup }
   | { kind: "group"; group: TagGroup }
   | { kind: "new"; name: string }
 
-/** The chooser's choices in order (its cursor indexes these), filtered by
- * `query`: your tags, then groups found in the history, then a new name.
- * IGNORE isn't offered: it says what to leave out, not what things are. */
 export function tagChoices(tags: Tag[], groups: TagGroup[], query: string): TagChoice[] {
   const q = query.trim()
   const own = tags.filter((t) => t.name.toUpperCase() !== "IGNORE")
@@ -33,8 +27,6 @@ export function tagChoices(tags: Tag[], groups: TagGroup[], query: string): TagC
   return [...fuzzyFilter(tagRows, q, name), ...fuzzyFilter(found, q, name), ...fresh]
 }
 
-/** The chooser's rows: a heading per section, each choice with what it
- * holds (how many tagged, its scope, a trip found for it). */
 export function tagChooserItems(choices: TagChoice[], transactions: Transaction[], categories: Category[]): PickerItem[] {
   const rows: PickerItem[] = []
   let section = ""

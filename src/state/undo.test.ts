@@ -4,10 +4,6 @@ import { testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
 import { ui } from "./uiStore"
 
-/**
- * Acceptance tests for undo (u) and repeat (.) — frozen: change the code,
- * not these. CSV rows (nothing goes to Up) unless a test says otherwise.
- */
 function setup() {
   testEnv("JASKMONEY_JEV_TOKEN", "")
   testEnv("JASKMONEY_UP_TOKEN", "")
@@ -41,7 +37,6 @@ test("undo reverses the last categorisation, newest first, and its rule-offer co
   expect(row(4).categoryId).toBe(fuel)
   expect(await data.undo()).toStartWith("Undid: categorised 3 → Test food")
   expect([1, 2, 3].map((id) => row(id).categoryId)).toEqual([null, null, null])
-  // Undone choices don't count toward a rule offer.
   expect(data.ruleOffersFor()).toEqual([])
   expect(loadCategoryLog(data.getDb()!)[0]).toMatchObject({ transactionId: expect.any(Number), how: "undo" })
   expect(data.undoLabel()).toBeNull()

@@ -18,7 +18,7 @@ test("categorising pushes Up subcategories and decategorisation, keeps local-onl
       (date_raw, date_iso, amount, description, account_id, source, external_id, ext_categorizable)
       VALUES ('x', '2026-10-01', -5, ?, ?, 'up', ?, ?)`).run(ext, account, ext, categorizable).lastInsertRowid)
     const [a, b, c, d] = [add("a", 1), add("b", 1), add("transfer", 0), add("fails", 1)]
-    assignProviderCategories(db) // as sync would: uncategorised rows get the default
+    assignProviderCategories(db)
     data.refresh()
     const id = (name: string) => data.state.categories.find((x) => x.name === name)!.id
     const calls: Array<{ url: string; method: string; body: string }> = []
@@ -30,31 +30,25 @@ test("categorising pushes Up subcategories and decategorisation, keeps local-onl
     }, { preconnect: globalThis.fetch.preconnect }))
     const row = (txn: number) => db.query(`SELECT category_id AS categoryId, category_source AS source, ext_category AS ext FROM transactions WHERE id = ?`).get(txn)
 
-    // Up subcategory → PATCH, then follows the provider.
     expect(await data.categorizeTransactions([a, c], id("Groceries"))).toContain("1 updated in Up")
     expect(calls).toEqual([{ url: "https://api.up.com.au/api/v1/transactions/a/relationships/category", method: "PATCH", body: '{"data":{"type":"categories","id":"groceries"}}' }])
     expect(row(a)).toEqual({ categoryId: id("Groceries"), source: "provider", ext: "groceries" })
-    // A transfer Up cannot categorise stays local.
     expect(row(c)).toEqual({ categoryId: id("Groceries"), source: "user", ext: null })
 
-    // Uncategorised → clear the category in Up.
     calls.length = 0
     await data.categorizeTransactions([a], id("Uncategorised"))
     expect(calls[0]!.body).toBe('{"data":null}')
     expect(row(a)).toEqual({ categoryId: id("Uncategorised"), source: null, ext: null })
 
-    // A local-only category never calls Up.
     calls.length = 0
     await data.categorizeTransactions([b], id("People"))
     expect(calls).toEqual([])
     expect(row(b)).toEqual({ categoryId: id("People"), source: "user", ext: null })
 
-    // A rejected push leaves the transaction unchanged and reports the error.
     const before = row(d)
     expect(await data.categorizeTransactions([d], id("Groceries"))).toContain("1 failed")
     expect(row(d)).toEqual(before)
 
-    // Sync's backfill keeps local choices and agrees with pushed ones.
     expect(assignProviderCategories(db)).toBe(0)
   } finally {
     fetchMock.mockRestore()
@@ -91,15 +85,11 @@ test("a categorisation Up didn't answer stays, marked pending, and goes again af
       return new Response(null, { status: 204 })
     }, { preconnect: globalThis.fetch.preconnect }))
 
-    // Up is down: the rows keep their new category, waiting.
     expect(await data.categorizeTransactions([a, refused], id("Groceries"))).toContain("2 waiting for Up")
     expect(row(a)).toEqual({ categoryId: id("Groceries"), source: "pending", ext: null })
-    // A retry while Up is still down keeps them waiting.
     expect(await data.retryPendingCategories()).toEqual({ pushed: 0, rejected: 0, waiting: 2 })
     expect(row(a)).toMatchObject({ source: "pending" })
-    // Sync keeps a pending row's category (it doesn't follow Up's yet).
     expect(assignProviderCategories(db)).toBe(0)
-    // A pending row whose category became local-only can't go to Up: it's the user's now.
     db.query("UPDATE transactions SET category_id = ?, category_source = 'pending' WHERE id = ?").run(id("People"), local)
 
     upDown = false
@@ -109,7 +99,6 @@ test("a categorisation Up didn't answer stays, marked pending, and goes again af
     expect(row(a)).toEqual({ categoryId: id("Groceries"), source: "provider", ext: "groceries" })
     expect(row(refused)).toEqual({ categoryId: id("Groceries"), source: "user", ext: null })
     expect(row(local)).toMatchObject({ categoryId: id("People"), source: "user" })
-    // Nothing left to send.
     calls.length = 0
     expect(await data.retryPendingCategories()).toEqual({ pushed: 0, rejected: 0, waiting: 0 })
     expect(calls).toEqual([])

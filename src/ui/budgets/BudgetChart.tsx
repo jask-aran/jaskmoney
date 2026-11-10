@@ -22,20 +22,14 @@ import { createBudgetLayout, panePointer } from "./BudgetsTab"
 
 export function createBudgetChartModel(input: Pick<ReturnType<typeof createBudgetHistory>, "subjectRows" | "subject"> & Pick<ReturnType<typeof createBudgetInputs>, "today" | "config" | "cycle"> & Pick<ReturnType<typeof createBudgetLayout>, "chartHeight" | "chartWidth">) {
   const { subjectRows, today, config, chartHeight, cycle, chartWidth, subject } = input
-  // The chart: the Overview's spending view over the cycle shown, for what
-  // the subject counts, with its budget; built once with a guessed axis
-  // width, again if the labels need another.
   const baseline = () => data.state.uiPrefs.xAxis === true
   const chartView = () => (BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view
-  // Subscriptions: the regular payments among the rows the budget counts
-  // (its fixed costs), what's due before payday, drawn in place of a chart.
   const subs = createMemo(() => subscriptions(subjectRows(), today()))
   const payday = () => addDays(cycleFor(config(), today()).end, 1)
   const dueBeforePayday = () => upcomingCharges(subs(), today(), addDays(payday(), -1)).reduce((sum, c) => sum + c.amount, 0)
   let axisWas = AXIS_GUESS
   const model = createMemo((): ChartModel | null => {
     if (chartView() === "Subscriptions" || chartView() === "Each cycle") return null
-    // Border (2), the x-axis line (a setting) and the x labels.
     const height = Math.max(3, chartHeight() - (baseline() ? 4 : 3))
     const series = dailySpendSeries(subjectRows(), cycle().start, cycle().end)
     const view = chartView() as "Cumulative" | "Daily" | "Weekly"
@@ -50,9 +44,6 @@ export function createBudgetChartModel(input: Pick<ReturnType<typeof createBudge
 
 export function createBudgetChart(input: Pick<ReturnType<typeof createBudgetHistory>, "subject" | "cycles"> & Pick<ReturnType<typeof createBudgetInputs>, "seen" | "today" | "pace"> & Pick<ReturnType<typeof createBudgetChartModel>, "model" | "baseline" | "chartView" | "subs" | "dueBeforePayday" | "payday"> & Pick<ReturnType<typeof createBudgetLayout>, "chartWidth" | "chartHeight"> & { props: { focused: SectionId } }) {
   const { subject, seen, model, chartWidth, chartHeight, baseline, chartView, cycles, subs, dueBeforePayday, today, payday, pace, props } = input
-  // The budget pane's key while it draws in ("always"): each view, budget
-  // and showing. Its views that aren't charts (Subscriptions, Each cycle)
-  // draw in on it too, as the Overview's table views do.
   const chartKey = () => (data.state.uiPrefs.chartMotion === "always" ? `${(BUDGET_VIEWS[ui.state.budgetChart] ?? BUDGET_VIEWS[0]!).view}:${subject().title}:${seen()}` : undefined)
   const tableReveal = useReveal(() => (model() ? undefined : chartKey()), () => chartSpeedMs(data.state.uiPrefs.chartSpeed), () => data.state.uiPrefs.chartCurve)
   const Chart = () => (
@@ -65,9 +56,6 @@ export function createBudgetChart(input: Pick<ReturnType<typeof createBudgetHist
       curve={data.state.uiPrefs.chartCurve}
       labels={data.state.uiPrefs.chartLabels} />
   )
-  // Each cycle: the subject cycle by cycle, newest first, each against the
-  // budget then, as many as fit.
-  // Drawing in, its rows drop in newest first, each bar sweeping in.
   const EachCycle = () => {
     const shown = () => cycles().slice(0, Math.max(1, chartHeight() - 2))
     const rowsIn = () => Math.ceil(Math.min(1, tableReveal() / 0.6) * shown().length)
@@ -84,11 +72,6 @@ export function createBudgetChart(input: Pick<ReturnType<typeof createBudgetHist
 
 export function createCycleCharts(input: Pick<ReturnType<typeof createBudgetLayout>, "cyclePanes" | "cyclePaneWidth" | "cyclePaneHeight"> & Pick<ReturnType<typeof createBudgetPlan>, "inCycle" | "allSpending" | "spendingIds"> & Pick<ReturnType<typeof createBudgetInputs>, "cycle" | "today" | "transactions" | "elapsed" | "through" | "seen"> & Pick<ReturnType<typeof createBudgetProgress>, "split"> & Pick<ReturnType<typeof createBudgetHistory>, "past"> & Pick<ReturnType<typeof createBudgetChartModel>, "baseline"> & { props: { focused: SectionId } }) {
   const { cyclePanes, inCycle, cycle, today, allSpending, split, transactions, spendingIds, past, elapsed, through, cyclePaneWidth, cyclePaneHeight, baseline, seen, props } = input
-  // The cycle panes: the Overview's views (CYCLE_VIEWS: not the spending
-  // ones, the budget pane's, nor the calendar) over the cycle shown, for every
-  // spending account (the Overview's "All spending"), with the total
-  // budgeted on the spending charts; Merchants against the same days of
-  // the cycle before, when the history covers it.
 
   const cycleViews = () => ui.state.budgetCycleViews.slice(0, cyclePanes()).map((i) => cycleView(i).view)
   const cycleShows = (view: string) => (cycleViews() as readonly string[]).includes(view)

@@ -10,13 +10,6 @@ import { renderApp } from "../testing/app"
 import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
 
-/**
- * Key-to-frame cost of the common keys on every tab: each key handled,
- * then one frame drawn, on a copy of your database (or JASKMONEY_BENCH_DB),
- * with no network. Not part of `bun test`; run `bun run bench`. Prints
- * mean and worst milliseconds per key, slowest first. BENCH_ONLY=<text>
- * measures only the matching scenarios (e.g. for a CPU profile).
- */
 const PRESSES = 30
 
 test("key-to-frame cost", async () => {
@@ -24,8 +17,6 @@ test("key-to-frame cost", async () => {
   testEnv("JASKMONEY_JEV_TOKEN", "")
   testEnv("JASKMONEY_CF_TOKEN", "")
   const dir = mkdtempSync(join(tmpdir(), "jaskmoney-bench-"))
-  // Your real database (a copy of it): the test setup points HOME at a
-  // throwaway folder, so not defaultDbPath().
   const source = process.env.JASKMONEY_BENCH_DB || join(userInfo().homedir, ".jaskmoney", "transactions.db")
   copyFileSync(source, join(dir, "t.db"))
   const t = await renderApp({ width: Number(process.env.BENCH_WIDTH ?? 200), height: Number(process.env.BENCH_HEIGHT ?? 55) })
@@ -34,7 +25,6 @@ test("key-to-frame cost", async () => {
   await t.renderOnce()
   const results: { name: string; mean: number; worst: number }[] = []
   const press = async (k: KeyEvent) => { handleKey(ui, k, data); await t.renderOnce() }
-  // BENCH_ONLY=text runs the scenarios whose names contain it (setups still run).
   const only = process.env.BENCH_ONLY
   async function measure(name: string, setup: () => void | Promise<void>, keys: KeyEvent[]) {
     await setup()

@@ -1,8 +1,6 @@
 import type { Db } from "../db/client"
 import type { createUpClient } from "./client"
 
-/** The name an Up row takes locally: Up's own, or when another row (not
- * `existingId`) has it, the name with " (Up)", then " (Up) 2", " (Up) 3"… */
 export function resolveUpName(base: string, lookup: (name: string) => number | undefined, existingId: number | undefined): string {
   const conflicts = (name: string) => { const id = lookup(name); return id !== undefined && id !== existingId }
   if (!conflicts(base)) return base
@@ -16,8 +14,6 @@ type CategoryTree = Awaited<ReturnType<ReturnType<typeof createUpClient>["listCa
 const palette = ["#fab387", "#cba6f7", "#94e2d5", "#89b4fa", "#f5c2e7", "#a6e3a1"]
 const unusedDefaults = ["Groceries", "Dining & Drinks", "Transport", "Bills & Utilities", "Entertainment", "Shopping", "Health"]
 
-// The caller owns the write transaction. Up owns names and parents, but local
-// identity, colours and order survive every later import.
 export function syncCategoryTree(db: Db, tree: CategoryTree): void {
   const firstImport = !db.query("SELECT 1 FROM categories WHERE ext_id IS NOT NULL LIMIT 1").get()
   if (firstImport) {
@@ -56,14 +52,6 @@ export function syncCategoryTree(db: Db, tree: CategoryTree): void {
   if (visited.size !== tree.length) throw new Error("Invalid Up category tree")
 }
 
-/**
- * Bring every provider-following row (category_source NULL or 'provider') in
- * line with its stored provider category: the local subcategory with that ext_id
- * (groups are never assigned, as in sync),
- * else the default (Uncategorised) with source NULL. Rows the user or a rule
- * categorised are untouched. Needs no API data, so it also covers rows outside
- * the incremental sync window. Returns the number of rows changed.
- */
 export function assignProviderCategories(db: Db): number {
   const fallback = db.query<{ id: number }, []>("SELECT id FROM categories WHERE is_default = 1 ORDER BY id LIMIT 1").get()?.id ?? null
   const result = db.query(`
@@ -79,15 +67,8 @@ export function assignProviderCategories(db: Db): number {
   return Number(result.changes)
 }
 
-/** Up transaction types that say what money in is, by income category. */
 const TYPE_CATEGORIES: Record<string, string> = { Salary: "Salary", Interest: "Interest" }
 
-/**
- * Put Up rows whose transaction type says what they are (Salary, Interest)
- * into that income category, marked 'type' so sync keeps it. Only rows with
- * no category of their own: never set by the user, a rule or Up. Local only:
- * Up has no income categories, so nothing is pushed. Returns the rows changed.
- */
 export function assignTypeCategories(db: Db): number {
   let changed = 0
   for (const [type, name] of Object.entries(TYPE_CATEGORIES)) {

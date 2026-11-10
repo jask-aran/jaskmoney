@@ -37,7 +37,6 @@ test("config writers preserve other fields, prefs merge, and unchanged prefs do 
     await data.saveUiPrefs({ weekStart: "monday", timeframe: { custom: null, period: "month", lookback: "1M", family: "period" } })
     expect(readFileSync(path, "utf8")).toBe(contents)
 
-    // Two spending accounts: with one, it is all spending.
     const { id } = ensureAccount(data.getDb()!, "Local", "debit")
     ensureAccount(data.getDb()!, "Other", "debit")
     data.refresh()

@@ -3,64 +3,26 @@ import { addDays, addMonthsClamped, dayOfWeek, daysBetween, MONTHS } from "./day
 import { isIncome, isSpending } from "./moneyRules"
 import { accountRole, type Account, type Category, type Transaction } from "./types"
 
-/**
- * Budget cycles and progress.
- *
- * One cycle definition applies to every budget. No rollover: each cycle
- * starts fresh from its limit. Dates are "YYYY-MM-DD" calendar days; weeks
- * start on Monday.
- */
-
 export type CycleUnit = "week" | "fortnight" | "month"
 
-/**
- * How cycles line up:
- * - "calendar": weeks start Monday; fortnights are Monday-start fortnights
- *   counted from Monday 1970-01-05; months start on the 1st.
- * - "date": cycles start on `anchorDate` and repeat every unit. Monthly cycles
- *   start on the anchor's day of month, clamped to the month's last day (an
- *   anchor on the 31st starts on 30 Apr, 28/29 Feb).
- * - "weekStartNearDate": like "date", but each cycle start moves to the Monday
- *   nearest it (a Thursday start moves back to Monday, a Friday start forward to
- *   the next Monday; nearest = smallest day distance, ties go back). For weeks
- *   and fortnights this just shifts the anchor; for months each month's
- *   (clamped) start day is shifted independently.
- */
 export type CycleAnchor = "calendar" | "date" | "weekStartNearDate"
 
 export interface CycleConfig {
   unit: CycleUnit
   anchor: CycleAnchor
-  /** Required for "date" and "weekStartNearDate"; ignored for "calendar". */
   anchorDate: string | null
-  /** Start a cycle early on the day pay arrives, when it arrives in the few
-   * days before the scheduled start (see `cycleFor`). */
   payEarly?: boolean
-  /** When pay arrived (the Salary category), ascending. Not stored: the data
-   * store fills it in for `payEarly`. */
   paydays?: readonly string[]
 }
 
 export interface Cycle {
-  /** First day, inclusive. */
   start: string
-  /** Last day, inclusive. */
   end: string
   days: number
 }
 
-/** Days before a scheduled start that early pay still opens the cycle. */
 const PAY_EARLY_DAYS: Record<CycleUnit, number> = { week: 2, fortnight: 5, month: 5 }
 
-/**
- * The cycle containing `dateISO` (dates before the anchor work too: cycles
- * extend backwards). Throws when the anchor needs a date and has none.
- *
- * With `payEarly`, a cycle starts on the earliest payday in the
- * PAY_EARLY_DAYS before its scheduled start (pay due on the 14th that lands
- * on Friday the 12th starts the cycle on the 12th), and the cycle before it
- * ends the day before. Pay on or after the scheduled start changes nothing.
- */
 export function cycleFor(config: CycleConfig, dateISO: string): Cycle {
   const scheduled = scheduledCycle(config, dateISO)
   const finish = (start: string, next: string): Cycle => ({ start, end: addDays(next, -1), days: daysBetween(start, next) })
@@ -70,19 +32,15 @@ export function cycleFor(config: CycleConfig, dateISO: string): Cycle {
     const from = addDays(start, -PAY_EARLY_DAYS[config.unit])
     return paydays.find((day) => day >= from && day < start) ?? start
   }
-  // Early pay for the next cycle can already have opened it.
   const following = scheduledCycle(config, scheduled.next)
   if (early(scheduled.next) <= dateISO) return finish(early(scheduled.next), early(following.next))
   return finish(early(scheduled.start), early(scheduled.next))
 }
 
-/** The pay dates `payEarly` looks for: income in the Salary category. */
 export function paydays(transactions: Pick<Transaction, "dateISO" | "amount" | "categoryName" | "income" | "tagNames" | "excluded" | "categoryId">[]): string[] {
   return [...new Set(transactions.filter((t) => isIncome(t) && t.amount > 0 && t.categoryName === "Salary").map((t) => t.dateISO))].sort()
 }
 
-/** The cycle containing `dateISO` by the anchor alone: its first day and the
- * next cycle's. */
 function scheduledCycle(config: CycleConfig, dateISO: string): { start: string; next: string } {
   if (config.anchor !== "calendar" && config.anchorDate === null) {
     throw new Error("budget cycle needs an anchor date")
@@ -93,7 +51,6 @@ function scheduledCycle(config: CycleConfig, dateISO: string): { start: string; 
   if (config.unit === "month") {
     const anchorDay = config.anchor === "calendar" ? "01" : anchor.slice(8, 10)
     const monthStart = (offset: number): string => {
-      // Start in January so an anchor on the 31st survives short months.
       const month = Number(dateISO.slice(5, 7)) - 1 + offset
       const day = addMonthsClamped(`${dateISO.slice(0, 4)}-01-${anchorDay}`, month)
       return config.anchor === "weekStartNearDate" ? nearestMonday(day) : day
@@ -118,7 +75,6 @@ function nearestMonday(iso: string): string {
   return addDays(iso, weekday <= 3 ? -weekday : 7 - weekday)
 }
 
-/** What a budget limits. A category budget on a group covers its children. */
 export type BudgetScope =
   | { kind: "overall" }
   | { kind: "account"; accountId: number }
@@ -130,11 +86,6 @@ export interface BudgetHistoryEntry {
   from: string | null
 }
 
-/** Budget in force at the cycle start: the scope's latest entry from on or
- * before it (a NULL date: since always; equal dates: the later array
- * entry). Before its first entry, or with none, a scope has no budget. (A
- * budget first set in the current cycle is recorded since always, so it
- * measures earlier cycles too: the data store's setBudget.) */
 export function budgetIn(history: readonly BudgetHistoryEntry[], scope: BudgetScope, cycleStartISO: string): number | null {
   const key = scopeKey(scope)
   let current: BudgetHistoryEntry | undefined
@@ -146,10 +97,6 @@ export function budgetIn(history: readonly BudgetHistoryEntry[], scope: BudgetSc
   return current?.amount ?? null
 }
 
-/** The budgets in force in the cycle starting `cycleStartISO`: every scope
- * today's budgets or the history name, as it was then (budgetIn), keeping
- * today's id where there is one (others get their own below zero), in
- * today's order then the history's. */
 export function budgetsIn(history: readonly BudgetHistoryEntry[], budgets: Budget[], cycleStartISO: string): Budget[] {
   const scopes = new Map<string, { scope: BudgetScope; id: number }>()
   for (const b of budgets) scopes.set(scopeKey(b.scope), { scope: b.scope, id: b.id })
@@ -160,8 +107,6 @@ export function budgetsIn(history: readonly BudgetHistoryEntry[], budgets: Budge
   })
 }
 
-/** The cycle `offset` cycles from the one containing `todayISO` (0 that
- * one, -1 the one before, ...). */
 export function cycleAt(config: CycleConfig, todayISO: string, offset: number): Cycle {
   let cycle = cycleFor(config, todayISO)
   for (let i = 0; i > offset; i--) cycle = cycleFor(config, addDays(cycle.start, -1))
@@ -172,28 +117,19 @@ export function cycleAt(config: CycleConfig, todayISO: string, offset: number): 
 export interface Budget {
   id: number
   scope: BudgetScope
-  /** Limit per cycle, dollars. */
   amount: number
 }
 
 interface BudgetProgress {
   budget: Budget
-  /** Positive dollars spent in the cycle up to and including today. */
   spent: number
-  /** amount − spent (negative when over). */
   remaining: number
-  /** spent / amount × 100 (a $0 budget: Infinity once anything is spent, else 0). */
   usedPct: number
-  /** Days from today to the cycle end, inclusive of today (≥ 1). */
   daysLeft: number
-  /** remaining / daysLeft, or 0 when remaining ≤ 0. */
   dailyAllowance: number
-  /** spent / elapsed days × cycle days, where elapsed = days from the cycle
-   * start through today (≥ 1). */
   projected: number
 }
 
-/** Category ids flagged for budget exclusion, plus children of flagged groups. */
 export function budgetIgnoredIds(categories: Category[]): Set<number> {
   const flagged = new Set(categories.filter((category) => category.budgetIgnored).map((category) => category.id))
   return new Set(categories.filter((category) => flagged.has(category.id)
@@ -202,25 +138,13 @@ export function budgetIgnoredIds(categories: Category[]): Set<number> {
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)
 
-/** What a budget looks at: one budget's scope, or all the budgets
- * together ("total": budgeted spending). */
 export type BudgetSubject = BudgetScope | { kind: "total" }
 
-/** Category ids with a budget of their own, and those under one. */
 function budgetedCategoryIds(budgets: Budget[], categories: Category[]): Set<number> {
   const own = new Set(budgets.flatMap((b) => (b.scope.kind === "category" ? [b.scope.categoryId] : [])))
   return new Set(categories.filter((c) => own.has(c.id) || (c.parentId !== null && own.has(c.parentId))).map((c) => c.id))
 }
 
-/**
- * Whether a spending row counts toward `subject`, given every budget:
- * - a category's budget: its own rows and those under it;
- * - the overall budget, everything else: rows in no category with a budget
- *   of its own, but for categories left out (budgetIgnoredIds);
- * - an account's: that account's rows, but for those left out;
- * - the total: the two together, every row but those left out with no
- *   budget of their own.
- */
 export function budgetCounts(subject: BudgetSubject, categories: Category[], budgets: Budget[]): (row: Transaction) => boolean {
   if (subject.kind === "category") {
     const parents = new Map(categories.map((category) => [category.id, category.parentId]))
@@ -235,9 +159,6 @@ export function budgetCounts(subject: BudgetSubject, categories: Category[], bud
   return (row) => kept(row) && row.accountId === subject.accountId
 }
 
-/** Each day's cycle start under `config`, kept while the config is: a new
- * subject (the Budgets chart follows the cursor) finds them again only if
- * the cycle settings or pay dates changed (store cycle makes a new one). */
 const startsByConfig = new WeakMap<CycleConfig, Map<string, string>>()
 function cycleStarts(config: CycleConfig): Map<string, string> {
   let starts = startsByConfig.get(config)
@@ -245,12 +166,8 @@ function cycleStarts(config: CycleConfig): Map<string, string> {
   return starts
 }
 
-/** budgetCounts with the budgets in force in each row's own cycle
- * (budgetsIn), for rows across cycles: rent counts toward everything else
- * only in cycles when it had no budget of its own. */
 export function budgetCountsThen(subject: BudgetSubject, categories: Category[], history: readonly BudgetHistoryEntry[], budgets: Budget[], config: CycleConfig): (row: Transaction) => boolean {
   if (subject.kind === "category") return budgetCounts(subject, categories, budgets)
-  // Rows share days and days share cycles: find each day's cycle once.
   const byCycle = new Map<string, (row: Transaction) => boolean>()
   const byDay = new Map<string, (row: Transaction) => boolean>()
   const starts = cycleStarts(config)
@@ -267,37 +184,23 @@ export function budgetCountsThen(subject: BudgetSubject, categories: Category[],
   }
 }
 
-/**
- * How the budgets add up. The overall budget is the cap: what you'll spend
- * in all. Category budgets are carved out of it, and everything else gets
- * the rest (`rest`; below zero when the categories ask for more than the
- * cap). Budgets on a group and on categories inside it overlap (the
- * group's covers them), so a category's counts only when its group has
- * none. `total` is what's budgeted in all: the cap, or with none set, the
- * category budgets added up.
- */
 export function allocation(budgets: Budget[], categories: Category[]): { overall: number | null; allocated: number; total: number; rest: number | null } {
   const overall = budgets.find((b) => b.scope.kind === "overall")?.amount ?? null
   const allocated = sum(topCategoryBudgets(budgets, categories).map((b) => b.amount))
   return { overall, allocated, total: overall ?? allocated, rest: overall == null ? null : overall - allocated }
 }
 
-/** The budgets as they're measured: the overall one is everything else's,
- * so its amount is the cap less what the categories take (none below zero). */
 export function measuredBudgets(budgets: Budget[], categories: Category[]): Budget[] {
   const { rest } = allocation(budgets, categories)
   return budgets.map((b) => (b.scope.kind === "overall" && rest != null ? { ...b, amount: Math.max(0, rest) } : b))
 }
 
-/** A scope's budget in the cycle starting `cycleStartISO`, as measured:
- * the overall scope gets what the cap left everything else then. */
 export function measuredBudgetIn(history: readonly BudgetHistoryEntry[], budgets: Budget[], categories: Category[], scope: BudgetScope, cycleStartISO: string): number | null {
   if (scope.kind !== "overall") return budgetIn(history, scope, cycleStartISO)
   const rest = allocation(budgetsIn(history, budgets, cycleStartISO).filter((b) => b.scope.kind !== "account"), categories).rest
   return rest == null ? null : Math.max(0, rest)
 }
 
-/** Category budgets not inside a group that has one. */
 function topCategoryBudgets(budgets: Budget[], categories: Category[]): Budget[] {
   const onCategory = new Set(budgets.flatMap((b) => (b.scope.kind === "category" ? [b.scope.categoryId] : [])))
   return budgets.filter((b) => {
@@ -308,15 +211,11 @@ function topCategoryBudgets(budgets: Budget[], categories: Category[]): Budget[]
   })
 }
 
-/** The total budget in force in the cycle starting `cycleStartISO`: the
- * budgets then (budgetsIn) added up (allocation); null when there were
- * none. */
 export function totalBudgetIn(history: readonly BudgetHistoryEntry[], budgets: Budget[], categories: Category[], cycleStartISO: string): number | null {
   const then = budgetsIn(history, budgets, cycleStartISO).filter((b) => b.scope.kind !== "account")
   return then.length ? allocation(then, categories).total : null
 }
 
-/** A budget's progress from what's been `spent` in `cycle` by `todayISO`. */
 export function progressOf(budget: Budget, spent: number, cycle: Cycle, todayISO: string): BudgetProgress {
   const daysLeft = daysBetween(todayISO, cycle.end) + 1
   const elapsed = daysBetween(cycle.start, todayISO) + 1
@@ -328,14 +227,6 @@ export function progressOf(budget: Budget, spent: number, cycle: Cycle, todayISO
   }
 }
 
-/**
- * Progress of each budget in the cycle containing `todayISO`, in the given
- * order. Spending follows the app's shared rules: outflows (amount < 0) from
- * spending-role accounts (`accountRole`), never `excluded` rows, never rows
- * tagged IGNORE (case-insensitive), and only rows dated within the cycle and
- * on or before today. Which of those count toward each budget:
- * budgetCounts.
- */
 export function budgetProgress(
   budgets: Budget[],
   config: CycleConfig,
@@ -346,16 +237,12 @@ export function budgetProgress(
 ): BudgetProgress[] {
   const cycle = cycleFor(config, todayISO)
   const rows = cycleSpending(cycle, todayISO, accounts, transactions)
-  // The overall budget is measured as everything else: the cap's rest.
   return measuredBudgets(budgets, categories).map((budget) => {
     const counts = budgetCounts(budget.scope, categories, budgets)
     return progressOf(budget, rows.reduce((total, row) => (counts(row) ? total - row.amount : total), 0), cycle, todayISO)
   })
 }
 
-/** Spending in a cycle through `throughISO` (the cycle's end for a whole
- * past cycle): outflows from spending accounts, by the shared spending
- * rules (budgetProgress). */
 export function cycleSpending(cycle: Cycle, throughISO: string, accounts: Account[], transactions: Transaction[]): Transaction[] {
   const spendingIds = new Set(accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id))
   return transactions.filter((row) => isSpending(row)
@@ -363,7 +250,6 @@ export function cycleSpending(cycle: Cycle, throughISO: string, accounts: Accoun
     && row.dateISO >= cycle.start && row.dateISO <= throughISO)
 }
 
-/** The `count` whole cycles before the one containing `todayISO`, newest first. */
 export function pastCycles(config: CycleConfig, todayISO: string, count: number): Cycle[] {
   const cycles: Cycle[] = []
   let cycle = cycleFor(config, todayISO)
@@ -374,8 +260,6 @@ export function pastCycles(config: CycleConfig, todayISO: string, count: number)
   return cycles
 }
 
-/** Positive dollars spent per top-level category (a group's children count
- * to it; uncategorised under null) in the given spending rows. */
 export function spendByGroup(rows: Transaction[], categories: Category[]): Map<number | null, number> {
   const parents = new Map(categories.map((category) => [category.id, category.parentId]))
   const spend = new Map<number | null, number>()
@@ -386,7 +270,6 @@ export function spendByGroup(rows: Transaction[], categories: Category[]): Map<n
   return spend
 }
 
-/** "Monthly from the 1st", "Fortnightly from 16 Oct 2026", "Monthly from the Monday nearest the 15th". */
 export function describeCycle(config: CycleConfig): string {
   const from = scheduleText(config)
   return config.payEarly ? `${from}, or payday if pay comes first` : from

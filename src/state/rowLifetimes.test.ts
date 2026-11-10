@@ -13,7 +13,6 @@ test("rows that no longer exist leave the selection, the picker's targets and th
   expect(ui.state.selectedIds).toEqual({ 1: true })
   expect(ui.state.pickerTargets).toEqual([1])
   expect(ui.state.detail).toEqual({ id: 1, boughtTop: 3, notes: { draft: "keep", caret: 4 } })
-  // Its row gone too, the detail closes.
   await data.clearAccountData(100)
   expect(ui.state.selectedIds).toEqual({})
   expect(ui.state.pickerTargets).toEqual([])

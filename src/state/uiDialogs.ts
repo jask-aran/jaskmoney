@@ -3,12 +3,10 @@ import { unwrap } from "solid-js/store"
 import type { Opening, ScopeId, UiState } from "./uiStore"
 import { BUDGET_PANES } from "./uiTables"
 
-/** A dialog key and its scope while open. */
 type Modal = {
   [K in DialogKey]: { key: K; scope: (value: NonNullable<UiState[K]>) => ScopeId }
 }[DialogKey]
 
-/** Every dialog, in input precedence order. Tab switches close them all. */
 const MODALS = [
   { key: "palette", scope: () => "palette" },
   { key: "searchHelp", scope: () => "searchHelp" },
@@ -37,14 +35,11 @@ const MODALS = [
   { key: "importHistory", scope: () => "settings.importHistory" },
   { key: "factoryReset", scope: () => "settings.factoryReset" },
   { key: "customEdit", scope: () => "overview.custom" },
-  // Under every dialog: a sign-in or key dialog it opens takes the keys.
   { key: "welcome", scope: () => "welcome" },
 ] satisfies Modal[]
 
-/** What closing every dialog writes. */
 export const ALL_CLOSED: Partial<UiState> = Object.assign({}, ...MODALS.map(({ key }) => ({ [key]: null })))
 
-/** Nullable object fields, including the accept-all preview array. */
 type DialogKey = {
   [K in keyof UiState]-?: null extends UiState[K]
     ? NonNullable<UiState[K]> extends object ? K : never
@@ -52,7 +47,6 @@ type DialogKey = {
 }[keyof UiState]
 
 export function createDialogActions(state: UiState, setState: SetStoreFunction<UiState>) {
-  /** The dialog open at `key` now, for work that finishes later (Opening). */
   function opening<K extends DialogKey>(key: K): Opening<NonNullable<UiState[K]>> {
     const at = unwrap(state)[key]
     const open = () => at != null && unwrap(state)[key] === at

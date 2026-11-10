@@ -1,17 +1,6 @@
 import { TextAttributes, type TextNodeRenderable } from "@opentui/core"
 import { createEffect, type JSX } from "solid-js"
 
-/**
- * Inline styled text.
- *
- * Why not `<span fg bold>` or `style`: on a span, OpenTUI's Solid reconciler
- * reads only `href` and `style` (@opentui/solid 0.7, index.js setProperty);
- * plain `fg`/`bg`/`bold` props are dropped. `style` does clear the bits it
- * set before (`attributes & ~prev | next`; older versions only ORed them in),
- * but it writes fg and bg on every change, and each TextNode write parses the
- * colour again and asks for a render. Here each value is written only when it
- * changes: a table updates hundreds of spans per keystroke.
- */
 export function S(props: {
   fg?: string
   bg?: string

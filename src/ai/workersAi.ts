@@ -2,7 +2,6 @@ import { credentialEnv } from "./credentials"
 
 export type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
-/** Buffer the body under the same deadline, leaving the response readable by the caller. */
 async function fetchWithTimeout(fetch: Fetch, input: string | URL | Request, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -14,12 +13,6 @@ async function fetchWithTimeout(fetch: Fetch, input: string | URL | Request, ini
     clearTimeout(timer)
   }
 }
-
-/**
- * Cloudflare Workers AI's Clairic: extracts typed values from text (here:
- * amounts, dates and words from a search), never prose. Requests go only to
- * api.cloudflare.com. Typed judgments come from Jev (`./jev`).
- */
 
 export class WorkersAiError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -40,21 +33,16 @@ export function readWorkersAiCredentials(env: Record<string, string | undefined>
   return { token, accountId }
 }
 
-/** Whether Workers AI is set up, without throwing. */
 export function hasWorkersAi(env: Record<string, string | undefined> = credentialEnv()): boolean {
   return !!env.JASKMONEY_CF_TOKEN?.trim() && !!env.JASKMONEY_CF_ACCOUNT_ID?.trim()
 }
 
-/** Whether smart search asks Clairic too: set up, and not switched off in
- * Settings › AI models › Search. */
 export function searchUsesClairic(env: Record<string, string | undefined> = credentialEnv()): boolean {
   return hasWorkersAi(env) && env.JASKMONEY_SEARCH_CLAIRIC?.trim() !== "off"
 }
 
 export type ClairicField = { type: "text" | "number" | "date"; instructions?: string; decimals?: number }
 
-/** A Clairic value: null when the text doesn't determine it. `guess` is
- * deliberately not kept: it echoes examples from the instructions. */
 export interface ClairicAnswer {
   value: string | number | null
   confidence: number | null
@@ -71,29 +59,20 @@ function clairicAnswer(value: unknown): ClairicAnswer | null {
   return { value: v, confidence: typeof value.confidence === "number" ? value.confidence : null }
 }
 
-/** Cloudflare's error text, readable: its "AiError: AiError: …" prefixes go,
- * and the free plan's daily cap says what it means. */
 function plainError(message: string): string {
   if (/daily free allocation/i.test(message)) return "free daily limit used up"
   return message.replace(/^(?:\s*AiError:\s*)+/i, "").trim() || message
 }
 
-/** A Workers AI model's address on an account. */
 export const workersAiUrl = (accountId: string, model = "clairic") => `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/@cf/cloudflare/${model}`
 
-/**
- * The Cloudflare accounts a token reaches (GET /accounts): with exactly one,
- * that's the account Clairic runs on, and nobody has to find its ID. A
- * Workers AI token lists its own account (checked 2026-11-02).
- */
-export async function cloudflareAccounts(token: string, fetch: Fetch = globalThis.fetch): Promise<Array<{ id: string; name: string }>> {
+async function cloudflareAccounts(token: string, fetch: Fetch = globalThis.fetch): Promise<Array<{ id: string; name: string }>> {
   const response = await fetch("https://api.cloudflare.com/client/v4/accounts", { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) })
   const body = (await response.json().catch(() => null)) as { success?: boolean; result?: Array<{ id?: unknown; name?: unknown }>; errors?: Array<{ message?: string }> } | null
   if (!response.ok || !body?.success) throw new Error(body?.errors?.[0]?.message ?? `Cloudflare answered ${response.status}`)
   return (body.result ?? []).flatMap((a) => (typeof a.id === "string" ? [{ id: a.id, name: typeof a.name === "string" ? a.name : a.id }] : []))
 }
 
-/** What the core asks Cloudflare; tests swap in fakes (testSetup). */
 export const cloudflare = { accounts: cloudflareAccounts }
 
 export function createWorkersAiClient({ token, accountId, fetch = globalThis.fetch, timeoutMs = 15_000 }: WorkersAiCredentials & { fetch?: Fetch; timeoutMs?: number }) {
@@ -123,7 +102,6 @@ export function createWorkersAiClient({ token, accountId, fetch = globalThis.fet
     return payload.result.answers
   }
 
-  /** Each answer, by question id; a malformed answer is an error. */
   async function answers<T>(model: string, body: Record<string, unknown>, ids: string[], parse: (value: unknown) => T | null): Promise<Record<string, T>> {
     const raw = await run(model, body)
     const out: Record<string, T> = {}
@@ -136,7 +114,6 @@ export function createWorkersAiClient({ token, accountId, fetch = globalThis.fet
   }
 
   return {
-    /** Clairic's values for `fields` in `state`; `referenceDate` anchors dates written without a year. */
     clairic(fields: Record<string, ClairicField>, state: string, referenceDate: string) {
       return answers("clairic", { state, fields, reference_date: referenceDate }, Object.keys(fields), clairicAnswer)
     },

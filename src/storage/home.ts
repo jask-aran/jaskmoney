@@ -2,17 +2,10 @@ import { Database } from "bun:sqlite"
 import { chmodSync, copyFileSync, existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 
-/**
- * All user data lives in one directory, ~/.jaskmoney (JASKMONEY_HOME
- * overrides it): settings.json, credentials.json (keys, the Up token
- * included), oauth.json (browser sign-ins) and transactions.db.
- * JASKMONEY_CONFIG and JASKMONEY_DB still point at other files.
- */
 export function jaskmoneyHome(env: Record<string, string | undefined> = process.env): string {
   return env.JASKMONEY_HOME || join(env.HOME ?? ".", ".jaskmoney")
 }
 
-/** Where data lived before ~/.jaskmoney. */
 export function legacyPaths(env: Record<string, string | undefined> = process.env) {
   const home = env.HOME ?? "."
   const config = join(env.XDG_CONFIG_HOME ?? join(home, ".config"), "jaskmoney-opentui")
@@ -22,12 +15,6 @@ export function legacyPaths(env: Record<string, string | undefined> = process.en
   }
 }
 
-/**
- * Once: copy data from the old places into the home directory, each file
- * only when the home has none yet; the database as a consistent snapshot
- * (VACUUM INTO, so a write-ahead log is folded in). The old files stay
- * where they were. Skipped where an override says where data is.
- */
 export function moveToHome(env: Record<string, string | undefined> = process.env): string[] {
   const home = jaskmoneyHome(env)
   const legacy = legacyPaths(env)

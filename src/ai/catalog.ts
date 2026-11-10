@@ -5,21 +5,11 @@ import { RULE_AFTER, RULE_SHARE } from "../domain/ruleOffers"
 import { TAG_SHOW_AT } from "../domain/tagSuggest"
 import { RULE_WRITER_TURNS } from "./ruleWriter"
 
-/**
- * What the AI does, described once for Settings › AI models: the uses, the
- * app features in each and the code behind them, every query a use sends,
- * and the context blocks each query is built from (domain/history gathers
- * them). The thresholds quoted are the constants the code reads, and a test
- * (catalog.test) checks each query's real request (app/sentPreview) has
- * exactly the fields declared here, so this can't drift from the code.
- */
-
 export const AI_USES = ["suggestions", "search", "rules"] as const
 export type AiUse = (typeof AI_USES)[number]
 
 type BlockId = "framing" | "row" | "merchant" | "merchantHistory" | "merchantNote" | "similarMessages" | "merchantCheck" | "categories" | "categoryExamples" | "tag" | "tagExamples" | "search" | "today" | "jql" | "ruleBrief" | "ruleTools"
 
-/** A piece of context: what it says, where it's gathered from, and the code that gathers it. */
 interface ContextBlock {
   name: string
   says: string
@@ -130,22 +120,15 @@ export const BLOCKS: Record<BlockId, ContextBlock> = {
 
 export type QueryId = "suggestion" | "merchantCheck" | "tagFind" | "searchTerms" | "searchCategories" | "clairic" | "ask" | "ruleWriter"
 
-/** Where a block goes in a query's request: its field names there, or none
- * when the block decides without being sent. `via` a tool's result rather
- * than the first request. */
 interface BlockUse { block: BlockId; fields: string[]; via?: "tools" }
 
 interface QueryInfo {
   use: AiUse
   name: string
   model: "jev" | "clairic" | "general"
-  /** The code that sends it. */
   code: string
-  /** When it's sent, and how many to a request. */
   when: string
-  /** What it asks, in plain words. */
   asks: string
-  /** What comes back, and what the app does with it. */
   answer: string
   context: BlockUse[]
 }
@@ -267,7 +250,6 @@ export const QUERIES: Record<QueryId, QueryInfo> = {
   },
 }
 
-/** An app feature a use powers: what it's called, how you reach it, and the code. */
 interface Feature { name: string; reach: string; code: string; queries: QueryId[] }
 
 export const USES: Record<AiUse, { name: string; features: Feature[]; withoutModel?: string }> = {
@@ -294,11 +276,8 @@ export const USES: Record<AiUse, { name: string; features: Feature[]; withoutMod
   },
 }
 
-/** A use's queries, in the order its features name them. */
 export const useQueries = (use: AiUse): QueryId[] => [...new Set(USES[use].features.flatMap((f) => f.queries))]
 
-/** What each kind of model is, and how it's signed in to. Its address,
- * limits and price come from the clients and pi-ai's catalog (aiDialog). */
 export const MODEL_KINDS: Record<"jev" | "clairic" | "general", { does: string; price?: string }> = {
   jev: {
     does: "Answers typed questions about the data sent with them: a choice among named options, with a probability for each, or a yes/no probability. It returns no text.",
@@ -313,5 +292,4 @@ export const MODEL_KINDS: Record<"jev" | "clairic" | "general", { does: string; 
   },
 }
 
-/** A model's queries, by kind. */
 export const queriesOf = (model: QueryInfo["model"]): QueryId[] => (Object.keys(QUERIES) as QueryId[]).filter((id) => QUERIES[id].model === model)

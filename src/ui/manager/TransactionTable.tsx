@@ -15,34 +15,19 @@ import { categoryMark } from "../icons"
 import { boughtText } from "../../domain/history"
 import { amountColor } from "../colors"
 
-/**
- * The Transactions tab's table: header, then the rows in view. Cursor, selection and range are
- * independent states styled by rowAppearance. Pending (held) rows are
- * italic with a grey clock after the amount.
- */
 const columns = {
   marker: 1,
   gap: 1,
   date: 9,
-  /** The amount, then a pending marker. */
   amount: 13,
   account: 12,
   category: 16,
 } as const
 
-/** Widest the description goes: longer ones (a rare few in Up's data run to
- * 54) are cut rather than pushing the category across. */
 const DESCRIPTION_MAX = 36
-/** Narrowest the category and tags go before the description gives way. */
 const CATEGORY_MIN = 16
 const TAGS_MIN = 8
 
-/** Column widths. The description gets its longest text up to
- * DESCRIPTION_MAX, then the category its
- * longest name, while both fit beside the minimums; tags, or without them
- * the category, take the rest so row backgrounds span the table. As in Go
- * (hasMultipleAccountNames), the Account column only shows for several
- * accounts. */
 function tableLayout(
   contentWidth: number,
   showAccount: boolean,
@@ -61,11 +46,7 @@ function tableLayout(
     : { description, category: category + rest, tags: 0, showAccount, showTags }
 }
 
-/** The widest description and category (with its marker) in the data, or
- * their headings with a sort mark. Every transaction counts, not just the
- * rows shown, so a filter or account switch never moves the columns. */
 const longest = () => ({
-  // With what a row bought after it (cut at DESCRIPTION_MAX all the same).
   description: Math.max("Description ▼".length, ...data.transactions().map((t) => Bun.stringWidth(t.description.trimEnd()) + (t.bought?.length ? 3 + Bun.stringWidth(boughtText(t)) : 0))),
   category: 2 + Math.max("Category ▼".length - 2, ...data.state.categories.map((c) => Bun.stringWidth(c.name))),
 })
@@ -75,7 +56,6 @@ function fmtDate(iso: string): string {
   if (!y || !m || !d) return iso
   return `${d}-${m}-${y.slice(2)}`
 }
-
 
 interface CategoryCell { marker: string; markerColor: string; text: string; textColor: string; muted: boolean; italic?: boolean; note?: string; noteColor?: string; lead?: string; leadColor?: string }
 
@@ -96,14 +76,10 @@ function formatCategory(
   }
 }
 
-/** How sure a suggestion is, at a glance: sure enough for accept-all, worth
- * a look, or a guess. */
 function confidenceColor(confidence: number): string {
   return confidence >= ACCEPT_ALL_AT ? tone.good : confidence >= 0.5 ? tone.caution : ink.note
 }
 
-/** A category cell with how likely the row matches the `ask:` terms: a
- * match's probability in green, a near miss's (≈) in amber. */
 function withAskScore(cell: CategoryCell, score: number | undefined, width: number): CategoryCell {
   if (score == null) return cell
   const near = score < MATCH_AT
@@ -111,12 +87,8 @@ function withAskScore(cell: CategoryCell, score: number | undefined, width: numb
   return { ...cell, text: fit(cell.text.trimEnd(), width - 2 - note.length), note, noteColor: near ? tone.caution : tone.good }
 }
 
-/** How far a suggested category's colour fades toward the canvas: it's
- * provisional until accepted. */
 const PROVISIONAL_FADE = 0.35
 
-/** A suggested category: its confidence first (↺ when it comes from
- * history), then the category faded and in italics; or why there is none yet. */
 function formatSuggestion(suggestion: TableSuggestion | undefined, width: number): CategoryCell {
   const category = suggestion && data.state.categories.find((c) => c.id === suggestion.categoryId)
   if (!suggestion || !category) {
@@ -136,8 +108,6 @@ function formatSuggestion(suggestion: TableSuggestion | undefined, width: number
   }
 }
 
-/** The Uncategorised view's Details cell: what the row bought, else the
- * bank's message, else its tags. */
 function formatDetails(t: Transaction, width: number): Span[] {
   const bought = boughtText(t)
   if (bought) return [{ text: fit(bought, width), fg: ink.label }]
@@ -145,8 +115,6 @@ function formatDetails(t: Transaction, width: number): Span[] {
   return formatTags(t.tagNames, t.tagColors, width)
 }
 
-/** The description cell: the description, then (dimmed) what the row
- * bought, while there's room — except where a Details column shows it. */
 function describe(t: Transaction, width: number, details: boolean): string[] {
   const bought = details ? "" : boughtText(t)
   const name = t.description.trimEnd()
@@ -154,10 +122,8 @@ function describe(t: Transaction, width: number, details: boolean): string[] {
   return [name, fit(` · ${bought}`, width - Bun.stringWidth(name))]
 }
 
-/** What the table needs of a category suggestion. */
 interface TableSuggestion { categoryId: number; confidence: number; source: "history" | "jev" }
 
-/** Every tag in its own colour, comma-joined and cut to `width` (Go app). */
 function formatTags(names: string[], colors: string[], width: number): Span[] {
   if (!names.length) return [{ text: "-".padEnd(width), fg: ink.faint }]
   const spans = names.flatMap((name, i): Span[] => [
@@ -167,9 +133,6 @@ function formatTags(names: string[], colors: string[], width: number): Span[] {
   return padSpans(spans, width)
 }
 
-/** A tag review's candidate in the Tags cell: the proposed tag, its
- * confidence coloured as a suggestion's (↺ from tag history, ◆ from a
- * detected trip or group), then the row's own tags. */
 function formatTagCandidate(candidate: TableTagCandidate, names: string[], colors: string[], width: number): Span[] {
   const mark = candidate.source === "history" ? "↺" : candidate.source === "group" ? "◆" : ""
   const spans: Span[] = [
@@ -180,23 +143,17 @@ function formatTagCandidate(candidate: TableTagCandidate, names: string[], color
   return padSpans(spans, width)
 }
 
-/** What the table needs of a tag review's candidate. */
 export interface TableTagCandidate { name: string; color: string; confidence: number; source: "group" | "history" | "jev" }
 
-/** The marker after a pending amount: a clock icon, or ◷ without icons. */
 function pendingMark(): string {
   return data.state.icons ? "\uf017" : "◷"
 }
 
-/** What the table is given. */
 interface TableProps {
   rows: Transaction[]
-  /** Index of the first row in view, and how many fit. */
   top: number
   visible: number
-  /** Absolute cursor index; null when the table is not focused. */
   cursor: number | null
-  /** Content width (inside the card's border and padding). */
   width: number
   showAccount: boolean
   showTags: boolean
@@ -204,17 +161,10 @@ interface TableProps {
   highlighted?: Record<number, boolean>
   sortMark?: (column: string) => string
   empty: string
-  /** Given (the Uncategorised view): the Category column shows these instead. */
   suggestions?: Record<number, TableSuggestion>
-  /** Given (near misses shown): how likely each row matches the `ask:` terms,
-   * shown after its category. */
   askScore?: (id: number) => number | undefined
-  /** Given (a tag review): each row's candidate, shown in the Tags column. */
   tagCandidate?: (id: number) => TableTagCandidate | undefined
-  /** Rows shown only as near misses: marked ≈ and dimmed, after the matches. */
   nearMiss?: (id: number) => boolean
-  /** How far the rows have drawn in (0–1): those past it, top to bottom,
-   * not yet drawn. */
   reveal?: number
 }
 
@@ -234,8 +184,6 @@ export function TransactionTable(props: TableProps) {
       <TableHeader table={props} layout={layout} />
       <Show when={props.rows.length} fallback={<text fg={ink.note}>{props.empty}</text>}>
         <box flexGrow={1} flexDirection="column">
-          {/* Index keeps each screen row and updates it in place: a filter
-              that changes every row would otherwise rebuild them all. */}
           <Index each={windowRows()}>
             {(r, i) => <TransactionRow table={props} layout={layout} r={r} i={i} rowsIn={rowsIn} />}
           </Index>
@@ -245,7 +193,6 @@ export function TransactionTable(props: TableProps) {
   )
 }
 
-/** The column headings, each with its sort mark. */
 function TableHeader(props: { table: TableProps; layout: () => Layout }) {
   const mark = (column: string) => props.table.sortMark?.(column) ?? ""
   const layout = props.layout
@@ -267,27 +214,18 @@ function TableHeader(props: { table: TableProps; layout: () => Layout }) {
   )
 }
 
-/** One screen row: `i` its place in the window, `r` the transaction there. */
 function TransactionRow(row: { table: TableProps; layout: () => Layout; r: () => Transaction; i: number; rowsIn: () => number }) {
-  // The table's props, and the row's accessors (stable: read once).
   const props = row.table
   const { layout, r, i, rowsIn } = row
   const absIndex = () => props.top + i
   const isCursor = () => props.cursor === absIndex()
-  // Booleans as memos: the maps they read are rebuilt whole on a
-  // write, and a row whose own state didn't change must not redraw.
   const selected = createMemo(() => !!props.selectedIds?.[r().id])
   const hl = createMemo(() => !!props.highlighted?.[r().id])
-  // OpenTUI cannot repaint a previous cell to transparency: it must
-  // receive the table canvas colour when a row loses its state bg.
-  // This is visually identical to the unstyled table background.
   const look = createMemo(() => rowAppearance(selected(), hl(), isCursor()))
   const rowBg = () => look().bg ?? theme.canvas
   const fg = (column: string) => look().fg ?? column
-  // A near miss reads quieter than a match, unless cursor, selection or range colour it.
   const near = createMemo(() => !!props.nearMiss?.(r().id))
   const faint = (column: string) => look().fg ?? (near() ? ink.note : column)
-  // Up holds (pending) render italic, with a clock, until they settle.
   const held = () => r().status === "HELD"
   const tags = createMemo(() => {
     if (props.suggestions) return formatDetails(r(), layout().tags)
@@ -298,8 +236,6 @@ function TransactionRow(row: { table: TableProps; layout: () => Layout; r: () =>
     ? formatSuggestion(props.suggestions[r().id], layout().category)
     : withAskScore(formatCategory(r().categoryId, r().categoryName, r().categoryColor, layout().category), props.askScore?.(r().id), layout().category))
   const strong = () => look().bold
-  // One styled line (StyledLine), not a span per cell: a page
-  // or a sort rewrites every row.
   const line = createMemo((): StyledSpan[] => {
     const bg = rowBg(), bold = strong(), cat = category(), catBold = bold && (!cat.muted || !!look().fg)
     return [

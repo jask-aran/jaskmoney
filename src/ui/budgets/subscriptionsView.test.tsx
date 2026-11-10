@@ -19,7 +19,6 @@ test("Budgets' Subscriptions view lists the regular payments the budget counts, 
   await t.renderOnce()
   await t.renderOnce()
   const frame = t.captureCharFrame()
-  // NETFLIX's rise shows; GYM, three months gone, has stopped.
   expect(frame).toMatch(/NETFLIX.*▲/)
   expect(frame).toMatch(/GYM.*stopped/)
   expect(frame).toContain("1 active")

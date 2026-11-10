@@ -1,11 +1,7 @@
 import { accountRole, type Account } from "./types"
 
-/** What the Transactions tab shows: all spending accounts, all savers, or
- * one spending account. */
 export type AccountSelection = "all" | "savers" | number
 
-/** A selectable row in the Transactions tab's accounts pane. `accountId`
- * is the one account behind the row, if there is one. */
 export interface AccountRow {
   selection: AccountSelection
   label: string
@@ -14,8 +10,6 @@ export interface AccountRow {
   accountId: number | null
 }
 
-/** One stack in the accounts pane: a source (or every source) with its net
- * position over the accounts it lists. */
 export interface AccountStack {
   label: string
   net: number | null
@@ -24,10 +18,6 @@ export interface AccountStack {
 
 const SOURCE_LABEL: Record<Account["source"], string> = { up: "Up (API)", csv: "CSV import" }
 
-/** The accounts pane: a stack per source with its spending accounts and one
- * Savers row for its savers (their rows are only transfers and interest).
- * With more than one spending account an "All accounts" stack comes first
- * for all spending together; with one, that account is all spending. */
 export function accountStacks(accounts: Account[]): AccountStack[] {
   const spending = accounts.filter((a) => accountRole(a) === "spending")
   const stacks: AccountStack[] = []
@@ -50,14 +40,10 @@ export function accountStacks(accounts: Account[]): AccountStack[] {
   return stacks
 }
 
-/** The pane's rows in order, stack by stack. */
 export function accountRows(accounts: Account[]): AccountRow[] {
   return accountStacks(accounts).flatMap((stack) => stack.rows)
 }
 
-/** A selection the pane can show: a saver stands for all savers, the only
- * spending account for all spending, and an account that no longer exists
- * for all spending. */
 export function normaliseSelection(accounts: Account[], selection: AccountSelection): AccountSelection {
   if (typeof selection !== "number") return selection
   const account = accounts.find((a) => a.id === selection)
@@ -83,9 +69,6 @@ function sumBalances(accounts: Account[]): number | null {
   return known.length ? known.reduce((sum, a) => sum + a.balance!, 0) : null
 }
 
-/** The spending accounts a period analysis covers: the selected account when
- * it is a spending account, otherwise every spending account (savers have
- * no spending of their own; their story is their balance). */
 export function spendingScope(accounts: Account[], selection: AccountSelection): { accounts: Account[]; label: string } {
   const one = typeof selection === "number" ? accounts.find((a) => a.id === selection && accountRole(a) === "spending") : undefined
   if (one) return { accounts: [one], label: one.name }

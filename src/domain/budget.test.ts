@@ -41,8 +41,6 @@ const cycleCases: CycleCase[] = [
 
 describe("cycleFor", () => {
   describe("payEarly", () => {
-    // Monthly from the 14th; pay lands on 12 Sep (a Friday, early), 14 Oct
-    // (on time), 16 Nov (late) and 6 Dec (too early to count).
     const config: CycleConfig = { unit: "month", anchor: "date", anchorDate: "2000-01-14", payEarly: true, paydays: ["2026-09-12", "2026-10-14", "2026-11-16", "2026-12-06"] }
     test("early pay opens the cycle that day; the cycle before ends the day before", () => {
       expect(cycleFor(config, "2026-09-11")).toEqual({ start: "2026-08-14", end: "2026-09-11", days: 29 })
@@ -78,7 +76,6 @@ describe("cycleFor", () => {
   })
 })
 
-// Rows default to today (2026-10-07) in the group category 10.
 const row = (amount: number, overrides: Partial<Transaction> = {}) =>
   transaction({ dateISO: "2026-10-07", categoryId: 10, amount, ...overrides })
 
@@ -86,7 +83,6 @@ const config: CycleConfig = { unit: "week", anchor: "calendar", anchorDate: null
 const accounts = [account({ id: 1 }), account({ id: 2, source: "csv", externalKind: null }), account({ id: 3, externalKind: "SAVER" })]
 const categories = [category({ id: 10 }), category({ id: 11, parentId: 10 }), category({ id: 12, parentId: 10 }), category({ id: 20 })]
 const budgets: Budget[] = [
-  // The cap: group 10's $100 comes out of it, leaving everything else $100.
   { id: 9, scope: { kind: "overall" }, amount: 200 },
   { id: 4, scope: { kind: "category", categoryId: 10 }, amount: 100 },
   { id: 7, scope: { kind: "category", categoryId: 11 }, amount: 100 },
@@ -106,8 +102,6 @@ describe("budgetProgress", () => {
   test("overall (everything outside the category budgets), accounts, group and child spending preserve budget order and exact metrics", () => {
     const result = budgetProgress(budgets, config, "2026-10-07", accounts, categories, transactions)
     expect(result).toEqual(budgets.map((budget, index) => {
-      // The overall budget is everything else: group 10 has its own, so
-      // only category 20 and the uncategorised row count.
       const spent = [25, 35, 20, 45, 15, 0][index] ?? 0
       return {
         budget: index === 0 ? { ...budget, amount: 100 } : budget, spent, remaining: 100 - spent, usedPct: spent,
@@ -176,14 +170,12 @@ describe("past cycles and spending by group (the Budgets tab)", () => {
       transaction({ id: 4, accountId: 1, dateISO: "2026-09-23", amount: -7, categoryId: null }),
       transaction({ id: 5, accountId: 2, dateISO: "2026-09-23", amount: -99, categoryId: 20 }),
       transaction({ id: 6, accountId: 1, dateISO: "2026-10-20", amount: -99, categoryId: 20 }),
-      // A refund into a spending category reduces it.
       transaction({ id: 7, accountId: 1, dateISO: "2026-09-24", amount: 30, categoryId: 20, categoryName: "Groceries" }),
     ]
     const cycle = pastCycles(monthly, "2026-10-27", 1)[0]!
     const spent = cycleSpending(cycle, cycle.end, accounts, rows)
     expect(spent.map((t) => t.id).sort()).toEqual([1, 2, 3, 4, 7])
     expect(Object.fromEntries(spendByGroup(spent, categories))).toEqual({ 10: 15, 20: 10, null: 7 })
-    // One rule for spending: a budget's spent is the Overview's Spent.
     const overall = budgetProgress([{ id: 1, scope: { kind: "overall" }, amount: 100 }], monthly, cycle.end, accounts, categories, rows)[0]!
     const inCycle = rows.filter((t) => t.dateISO >= cycle.start && t.dateISO <= cycle.end)
     expect(overall.spent).toBe(computePeriodFlows(accounts, inCycle).spent)

@@ -6,15 +6,6 @@ import { AI_USES, MODEL_KINDS, QUERIES, queriesOf, type AiUse, type QueryId } fr
 import { jevEndpoint, REQUEST_BUDGET } from "../ai/jev"
 import { workersAiUrl } from "../ai/workersAi"
 
-/**
- * Settings › AI models: the models, each with a dialog (enter) for how it's
- * connected (sign in with the browser, enter a key, change the model,
- * test, remove); then the uses, each with the model doing it and a dialog
- * to choose it and to see exactly what is sent. Pure: what the pane and
- * the dialogs show, from the stored keys, settings and sign-ins.
- */
-/** The AI models pane's rows in cursor order: the inputs (the models, then
- * the sources), then the outputs (the uses). */
 type AiPaneRow = { kind: "model"; row: AiRow } | { kind: "source" } | { kind: "use"; use: AiUse }
 export const aiPaneRows = (models: readonly AiRow[]): AiPaneRow[] => [
   ...models.map((row) => ({ kind: "model" as const, row })), { kind: "source" as const }, ...AI_USES.map((use) => ({ kind: "use" as const, use })),
@@ -22,9 +13,7 @@ export const aiPaneRows = (models: readonly AiRow[]): AiPaneRow[] => [
 
 type AiAction = "signIn" | "key" | "page" | "accountId" | "model" | "test" | "remove"
 
-/** Where a key or token is made, for the dialog's "Open … to make one". */
 export const KEY_PAGES: Partial<Record<KeyRow, { url: string; site: string }>> = {
-  // Cloudflare has no sign-in for other apps: a token from its dashboard.
   workersAi: { url: "https://dash.cloudflare.com/?to=/:account/api-tokens", site: "Cloudflare" },
   openrouter: { url: "https://openrouter.ai/settings/keys", site: "openrouter.ai" },
   openai: { url: "https://platform.openai.com/api-keys", site: "platform.openai.com" },
@@ -33,11 +22,8 @@ export const KEY_PAGES: Partial<Record<KeyRow, { url: string; site: string }>> =
 export interface AiContext {
   keys: Record<CredentialName, { source: "saved" | "env" | null; mask: string }>
   signedIn: Record<LlmProvider, boolean>
-  /** The general model's provider in use. */
   inUse: LlmProvider
-  /** A provider's model id, and whether it's the default. */
   model: (provider: LlmProvider) => { id: string; isDefault: boolean; effort?: string }
-  /** Smart search asks Clairic too, when it's connected. */
   searchClairic: boolean
 }
 
@@ -49,7 +35,6 @@ export const AI_NAMES: Record<KeyRow, { name: string; by: string; uses: string }
   up: { name: "Up Bank", by: "Personal Access Token", uses: "syncing accounts and transactions; your categories and tags go back to Up" },
 }
 
-/** The context from the stores and settings (keys, sign-ins, provider in use, models). */
 export function aiContext(data: Pick<DataStore, "state">): AiContext {
   const env = credentialEnv()
   return {
@@ -66,7 +51,6 @@ export function aiContext(data: Pick<DataStore, "state">): AiContext {
   }
 }
 
-/** The key a row's connection rests on (Workers AI needs its account id too). */
 function keyOf(row: KeyRow, ctx: AiContext) {
   if (row === "up") return ctx.keys.JASKMONEY_UP_TOKEN
   if (row === "jev") return ctx.keys.JASKMONEY_JEV_TOKEN
@@ -74,13 +58,11 @@ function keyOf(row: KeyRow, ctx: AiContext) {
   return ctx.keys[LLM_PROVIDERS[row].keyName]
 }
 
-/** How a row is connected, in full and in short; null when it isn't. */
 export function aiConnection(row: KeyRow, ctx: AiContext): { long: string; short: string } | null {
   const key = keyOf(row, ctx)
   if (key.source === "saved") return { long: "key saved here", short: "key · saved" }
   if (key.source === "env") return { long: "from the environment", short: "key · env" }
   if (isLlmRow(row) && ctx.signedIn[row]) return { long: "signed in with the browser", short: "signed in" }
-  // Without its own key, Jev goes through OpenRouter when that's connected.
   if (row === "jev") {
     const openrouter = aiConnection("openrouter", ctx)
     if (openrouter) return { long: `through OpenRouter (${openrouter.long})`, short: "via OpenRouter" }
@@ -88,13 +70,11 @@ export function aiConnection(row: KeyRow, ctx: AiContext): { long: string; short
   return null
 }
 
-/** The pane's row. */
 export function aiRow(row: KeyRow, ctx: AiContext) {
   const connection = aiConnection(row, ctx)
   return { name: AI_NAMES[row].name, connected: !!connection, how: connection?.short ?? "not set" }
 }
 
-/** The dialog's status lines. */
 export function aiStatus(row: KeyRow, ctx: AiContext): { label: string; value: string }[] {
   const lines = [{ label: "Connection", value: aiConnection(row, ctx)?.long ?? "not set" }]
   if (row === "workersAi" && ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source) lines.push({ label: "Account", value: ctx.keys.JASKMONEY_CF_ACCOUNT_ID.source === "env" ? "from the environment" : "saved here" })
@@ -105,9 +85,6 @@ export function aiStatus(row: KeyRow, ctx: AiContext): { label: string; value: s
 const thousands = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))
 const names = (ids: QueryId[]) => ids.map((id) => QUERIES[id].name).join(", ")
 
-/** What a model is: its model, address, how it's signed in to, what it
- * does, its limits and price, and the queries it answers now. Addresses
- * and limits from the clients and pi-ai's catalog. */
 function modelFacts(row: AiRow, ctx: AiContext): { label: string; value: string }[] {
   const kind = row === "jev" ? "jev" : row === "workersAi" ? "clairic" : "general"
   const lines: { label: string; value: string }[] = []
@@ -143,7 +120,6 @@ function modelFacts(row: AiRow, ctx: AiContext): { label: string; value: string 
   return lines
 }
 
-/** The queries a model answers now. */
 function usedBy(row: AiRow, ctx: AiContext): string {
   if (row === "jev") return names(queriesOf("jev"))
   if (row === "workersAi") return `${names(queriesOf("clairic"))}${ctx.searchClairic ? "" : " (switched off in Search)"}`
@@ -152,14 +128,10 @@ function usedBy(row: AiRow, ctx: AiContext): string {
   return [rules, jev].filter(Boolean).join("; ") || `nothing now (${LLM_PROVIDERS[ctx.inUse].label} writes rules)`
 }
 
-/** A model's dialog, opened (Settings › AI models, and the setup's AI
- * step: one dialog for every model, however it connects). It opens on its
- * actions, the likeliest first; a paste goes straight into the key. */
 export function aiDialogFor(row: KeyRow) {
   return { row, cursor: 0, field: null, note: null, busy: false }
 }
 
-/** The dialog's actions, the likeliest first: a general model's browser sign-in. */
 export function aiActions(row: KeyRow, ctx: AiContext): { id: AiAction; label: string }[] {
   const connected = aiConnection(row, ctx) !== null
   const actions: { id: AiAction; label: string }[] = []
@@ -174,9 +146,6 @@ export function aiActions(row: KeyRow, ctx: AiContext): { id: AiAction; label: s
   return actions
 }
 
-/** What the action at the cursor does, when it needs saying. OpenRouter's
- * browser sign-in mints a permanent key on the account: signing in again
- * makes another, and removing only forgets this app's copy. */
 export function aiActionHint(row: KeyRow, action: AiAction, ctx: AiContext): string | null {
   if (action === "signIn") {
     const again = isLlmRow(row) && ctx.signedIn[row]
@@ -197,7 +166,6 @@ export function aiActionHint(row: KeyRow, action: AiAction, ctx: AiContext): str
   return null
 }
 
-/** Something saved here to remove (a key from the environment stays: it isn't the app's). */
 function removable(row: KeyRow, ctx: AiContext): boolean {
   if (row === "up") return ctx.keys.JASKMONEY_UP_TOKEN.source === "saved"
   if (row === "jev") return ctx.keys.JASKMONEY_JEV_TOKEN.source === "saved"
@@ -206,16 +174,11 @@ function removable(row: KeyRow, ctx: AiContext): boolean {
   return ctx.keys[keyName].source === "saved" || ctx.keys[modelName].source === "saved" || ctx.signedIn[row]
 }
 
-// ---------- Uses ----------
-
-
-/** How Jev is reached: TypeSafe (its key) wins over OpenRouter. */
 function jevVia(ctx: AiContext): "TypeSafe" | "OpenRouter" | null {
   if (ctx.keys.JASKMONEY_JEV_TOKEN.source) return "TypeSafe"
   return aiConnection("openrouter", ctx) ? "OpenRouter" : null
 }
 
-/** The model doing a use, as the pane and the dialog name it; `ready` when it can run. */
 export function useModel(use: AiUse, ctx: AiContext): { text: string; ready: boolean } {
   if (use === "rules") {
     const provider = ctx.inUse
@@ -230,7 +193,6 @@ export function useModel(use: AiUse, ctx: AiContext): { text: string; ready: boo
 
 type UseAction = { id: "clairic"; on: boolean } | { id: "provider"; provider: LlmProvider } | { id: "connect"; row: AiRow } | { id: "model"; provider: LlmProvider }
 
-/** A use dialog's model actions: choose its model, connect one it needs. */
 export function useActions(use: AiUse, ctx: AiContext): Array<UseAction & { label: string }> {
   const out: Array<UseAction & { label: string }> = []
   if (use === "rules") {
@@ -241,7 +203,6 @@ export function useActions(use: AiUse, ctx: AiContext): Array<UseAction & { labe
         : { id: "connect", row: provider, label: `Connect ${LLM_PROVIDERS[provider].label}…` })
     }
     if (!aiConnection(ctx.inUse, ctx)) out.unshift({ id: "connect", row: ctx.inUse, label: `Connect ${LLM_PROVIDERS[ctx.inUse].label}…` })
-    // The model that writes them: chosen here, where it's used.
     else out.unshift({ id: "model", provider: ctx.inUse, label: `Change the model… (${ctx.model(ctx.inUse).id})` })
   } else if (!jevVia(ctx)) out.push({ id: "connect", row: "jev", label: "Connect Jev…" })
   if (use === "search") {

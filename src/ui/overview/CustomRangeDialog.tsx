@@ -16,25 +16,13 @@ import { onPointer } from "../../app/pointer"
 import { markCustomCell, pageCustomCalendar, setCustomView } from "../../app/keys"
 
 type Edit = NonNullable<typeof ui.state.customEdit>
-/** The fields' range as it reads, or null while one doesn't. */
 type Read = () => Exclude<ReturnType<typeof readCustomRange>, { error: string }> | null
 
-/** A day's cell is six columns, a month's or a year's twelve; a blank
- * line between weeks. */
 const DAY_CELL = 6
 const UNIT_CELL = 12
-/** The grid's lines under its weekday names: six weeks a line apart. The
- * months and years views spread their three rows over the same, so the
- * dialog keeps its size. */
 const GRID_LINES = 11
 const DIALOG_WIDTH = 7 * DAY_CELL + 18
 
-/**
- * How a calendar cell looks, from its states (each independent): in the
- * range (the selected wash, a band across the row, its number in the scope
- * tone), one of its ends (solid scope, dark number), the cursor (the
- * cursor wash, while the calendar has focus), today (bold).
- */
 function calendarCellLook(state: { inRange: boolean; end: boolean; cursor: boolean; today: boolean }): { fg: string; bg: string | undefined; bold: boolean } {
   if (state.cursor) {
     const look = rowAppearance(state.inRange, false, true)
@@ -45,17 +33,9 @@ function calendarCellLook(state: { inRange: boolean; end: boolean; cursor: boole
   return { fg: state.today ? ink.figure : ink.label, bg: undefined, bold: state.today }
 }
 
-/** Where a click on the dialog counts. */
 const here = (s: string) => s === "overview.custom"
 const today = () => appToday()
 
-/**
- * The Custom range dialog: a calendar to mark the range on, and From and
- * To to type it (tab). The calendar has the focus as it opens: arrows move
- * its cursor. A cell is a day, a month or a year (Days, Months, Years);
- * enter (or a click) on one marks where the range starts, a second where
- * it ends, and applies it. Keys: app/keys handleOverviewCustom.
- */
 export function CustomRangeDialog(props: { edit: Edit }) {
   const read = () => {
     const r = readCustomRange(props.edit.start.value, props.edit.end.value, today())
@@ -75,8 +55,6 @@ export function CustomRangeDialog(props: { edit: Edit }) {
       <text> </text>
       <CustomRangeCalendar edit={props.edit} read={read} />
       <CustomRangeFields edit={props.edit} read={read} />
-      {/* What enter found wrong, or what the fields take while one doesn't
-          read. */}
       <Show when={props.edit.error || !read()}>
         <text wrapMode="none" paddingLeft={1} fg={props.edit.error ? tone.bad : ink.note}>{props.edit.error || CUSTOM_DATE_FORMS}</text>
       </Show>
@@ -84,7 +62,6 @@ export function CustomRangeDialog(props: { edit: Edit }) {
   )
 }
 
-/** Where the calendar is, between ‹ › (each a click), and its views. */
 function CustomRangePager(props: { edit: Edit }) {
   const pageLook = () => chipLook({ active: false, cursor: props.edit.focus === "page" })
   return (
@@ -110,11 +87,7 @@ function CustomRangePager(props: { edit: Edit }) {
   )
 }
 
-/** The calendar: the days of the cursor's month under their weekday
- * names, or the months or years around it. */
 function CustomRangeCalendar(props: { edit: Edit; read: Read }) {
-  // The range drawn: the one a waiting mark would make with the cursor,
-  // else the fields' as they read.
   const shown = () => (props.edit.mark ? markedRange(props.edit.mark, props.edit.cursor, props.edit.view) : props.read())
   const calendarFocused = () => props.edit.focus === "grid"
   const look = (iso: string, view: CalendarView) => {
@@ -125,8 +98,6 @@ function CustomRangeCalendar(props: { edit: Edit; read: Read }) {
     const cursor = calendarFocused() && unitOf(props.edit.cursor, view).start === unit.start
     return calendarCellLook({ inRange, end, cursor, today: holds(today()) })
   }
-  // A cell reads its day as it changes: Index keeps cells by place as the
-  // page or view changes under them.
   const cell = (iso: () => string, view: () => CalendarView, width: number) => {
     const padded = () => {
       const text = cellText(iso(), view())
@@ -171,7 +142,6 @@ function CustomRangeCalendar(props: { edit: Edit; read: Read }) {
   )
 }
 
-/** What's marked, to type over (tab), and how long. */
 function CustomRangeFields(props: { edit: Edit; read: Read }) {
   const field = (focus: "from" | "to", name: string) => (
     <text wrapMode="none" onMouseDown={onPointer(here, () => {

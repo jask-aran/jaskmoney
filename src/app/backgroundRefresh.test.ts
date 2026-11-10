@@ -11,7 +11,6 @@ const SUMMARY = "Up sync: 0 new, 0 updated, 0 pending removed"
 function setup() {
   const saved = { ...purchaseSources }
   onTestFinished(() => Object.assign(purchaseSources, saved))
-  // Empty rows take the no-due path; any mail request would be a test failure.
   purchaseSources.signedIn = () => true
   purchaseSources.accounts = async () => { throw new Error("unexpected Gmail call") }
   purchaseSources.run = async () => { throw new Error("unexpected mail call") }

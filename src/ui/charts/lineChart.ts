@@ -1,24 +1,13 @@
-/**
- * Braille line charts. Each cell holds a 2×4 grid of dots, so a chart
- * `width` × `height` cells plots on a (2·width) × (4·height) dot canvas.
- * Pure: returns runs of text tagged with an ink key; the caller maps inks to
- * colours.
- */
-
 import { MONTHS, addDays, dayOfWeek, type WeekStart } from "../../domain/days"
 import { appendRun } from "./runs"
 
 interface LineSeries {
-  /** One value per x position; null leaves a gap (e.g. days after today). */
   values: Array<number | null>
   ink: string
-  /** Fill the cells below the line with this ink; the line's own cells hold
-   * only the line. */
   fill?: string
 }
 
 interface Marker {
-  /** X position (index into the series). */
   index: number
   ink: string
 }
@@ -28,29 +17,19 @@ export interface Run {
   ink: string | null
 }
 
-// Dot bits by [column][row]: Unicode braille numbering (dots 1-8).
 const DOT_BITS = [
   [0x01, 0x02, 0x04, 0x40],
   [0x08, 0x10, 0x20, 0x80],
 ]
 
-/** Dot column for x position `index` of `length`, spread over `width` cells. */
 function dotColumn(index: number, length: number, width: number): number {
   return length <= 1 ? 0 : Math.round((index * (2 * width - 1)) / (length - 1))
 }
 
-/** Cell column for x position `index` of `length`. */
 export function cellColumn(index: number, length: number, width: number): number {
   return Math.floor(dotColumn(index, length, width) / 2)
 }
 
-/**
- * Draw `series` between `min` (bottom) and `max` (top), connecting consecutive
- * non-null points. A cell shared by two lines shows the one with more dots
- * there (the later on a tie). Markers draw a vertical rule in cells without
- * dots.
- * Returns rows top first, each a list of runs.
- */
 export function lineChart(opts: {
   series: LineSeries[]
   length: number
@@ -64,10 +43,6 @@ export function lineChart(opts: {
   if (width <= 0 || height <= 0) return []
   const span = opts.max - min || 1
   const dotsHigh = 4 * height
-  // A cell has one colour, so each series (and each fill) draws on its own
-  // layer, and a cell shows only one layer's dots: the line with the most
-  // dots there (ties to the later series), else a fill. Another line's dots
-  // in that cell are dropped rather than drawn in the wrong colour.
   const layers: Array<{ ink: string; fill: boolean; masks: number[] }> = []
   const layer = (ink: string, fill: boolean) => {
     const l = { ink, fill, masks: new Array<number>(width * height).fill(0) }
@@ -94,8 +69,6 @@ export function lineChart(opts: {
       prev = point
     }
     if (s.fill) {
-      // From the cell row below the line's lowest dot in each dot column down
-      // to the floor, so the line's own cells hold only the line.
       const f = layer(s.fill, true)
       const lowest = new Map<number, number>()
       for (const [x, y] of dots) lowest.set(x, Math.max(lowest.get(x) ?? -1, y))
@@ -119,8 +92,6 @@ export function lineChart(opts: {
   return paintRows(masks, inks, opts.markers ?? [], length, width, height)
 }
 
-/** The rows of a line chart's cells (top first): each cell's dots in its
- * ink, else a marker's rule, else blank. */
 function paintRows(masks: number[], inks: Array<string | null>, markers: Marker[], length: number, width: number, height: number): Run[][] {
   const markerInk = new Map<number, string>()
   for (const m of markers) {
@@ -141,7 +112,6 @@ function paintRows(masks: number[], inks: Array<string | null>, markers: Marker[
   return rows
 }
 
-/** Bresenham between two dot positions, inclusive. */
 function line([x0, y0]: [number, number], [x1, y1]: [number, number], plot: (x: number, y: number) => void) {
   const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0)
   const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1
@@ -155,16 +125,10 @@ function line([x0, y0]: [number, number], [x1, y1]: [number, number], plot: (x: 
   }
 }
 
-/** The cell (row top first, column) holding point `index` of `length` at
- * `value`, on a chart drawn by lineChart with the same bounds. */
 export function pointCell(index: number, value: number, length: number, width: number, height: number, min: number, max: number): { row: number; col: number } {
   return { row: valueRow(value, min, max, height), col: cellColumn(index, length, width) }
 }
 
-/**
- * A round axis ceiling for `max` and its tick step, at most `ticks` steps
- * (1, 2, 2.5 or 5 × 10^k per step).
- */
 export function niceScale(max: number, ticks = 4): { max: number; step: number } {
   if (!(max > 0)) return { max: 1, step: 1 }
   const raw = max / ticks
@@ -173,31 +137,12 @@ export function niceScale(max: number, ticks = 4): { max: number; step: number }
   return { max: Math.ceil(max / step - 1e-9) * step, step }
 }
 
-/**
- * Cell row (top first) whose dots hold `value` on a `height`-row chart
- * between `min` and `max`; matches the rows `lineChart` plots on.
- */
 export function valueRow(value: number, min: number, max: number, height: number): number {
   const dotsHigh = 4 * height
   const level = Math.round(((value - min) / (max - min || 1)) * (dotsHigh - 1))
   return Math.floor((dotsHigh - 1 - Math.max(0, Math.min(dotsHigh - 1, level))) / 4)
 }
 
-/**
- * Gridlines and the x-axis label line for a daily series over `dates`, as in
- * the Go app: month starts ("year" on 1 Jan) and the range's closing month
- * end, only quarters' when months are under 4 cells; week rules on the
- * week-start day when weeks are at least 6 cells apart, else on days 7, 14
- * and 21 of each month, then 14 alone, while those stay 6 cells apart
- * (unlabelled; closer, they read as a fence); and today, which replaces a
- * rule on its day.
- * Today's date is always labelled, centred under its rule, as zoom allows
- * ("27" over six weeks or less, "27 Oct" up to two years, "Oct 26" beyond);
- * `today` says where, for its colour. The other labels are placed greedily
- * around it by priority (start and end, then months, then week-start day
- * numbers) with at least two blank cells between them. `colOf`
- * places date index i (default: the line chart's spread over `width`).
- */
 export function dateAxis(
   dates: string[],
   width: number,
@@ -234,7 +179,6 @@ export function dateAxis(
     if (!quartersOnly || [1, 4, 7, 10].includes(Number(iso.slice(5, 7)))) markers.push({ index: i, ink: yearInk(iso) })
     labelAt.push({ col: colOf(i), text: iso.slice(5, 7) === "01" ? iso.slice(0, 4) : month(iso), align: "left" })
   }
-  // The closing month end, when the range ends on one.
   const lastISO = dates[n - 1]!
   if (n > 1 && day(addDays(lastISO, 1)) === 1) markers.push({ index: n - 1, ink: yearInk(addDays(lastISO, 1)) })
   for (const i of weekStarts) {
@@ -243,7 +187,6 @@ export function dateAxis(
   }
   const today = dates.indexOf(todayISO)
   if (today > 0 && today <= n - 1) {
-    // Today's rule replaces a week or month rule on the same day.
     for (let i = markers.length - 1; i >= 0; i--) if (markers[i]!.index === today) markers.splice(i, 1)
     markers.push({ index: today, ink: "today" })
   }
@@ -271,8 +214,6 @@ export function dateAxis(
   return { markers, labels: line.join(""), ...(todayLabel ? { today: todayLabel } : {}) }
 }
 
-/** Round axis bounds around `lo`..`hi` with their tick step (see niceScale).
- * A flat series gets a band around its value. */
 function niceRange(lo: number, hi: number, ticks = 4): { min: number; max: number; step: number } {
   const spread = hi - lo || Math.abs(hi) || 1
   const { step } = niceScale(spread, ticks)
@@ -282,23 +223,15 @@ function niceRange(lo: number, hi: number, ticks = 4): { min: number; max: numbe
   return { min, max, step }
 }
 
-/** Axis bounds for a level series drawn over `rows` cell rows: the series'
- * own low and high with a row of headroom each side, so the line never sits
- * on the plot's floor or ceiling; with `zero`, the bounds also take in $0.
- * Ticks fall on the step's multiples between the bounds. A flat series gets
- * a band around its value (see niceRange). */
 export function fitRange(lo: number, hi: number, rows: number, zero = false): { min: number; max: number; step: number } {
   if (zero) [lo, hi] = [Math.min(0, lo), Math.max(0, hi)]
   if (hi === lo) return niceRange(lo, hi)
-  // pad / (spread + 2 pad) = 1 / rows; $0 itself needs no headroom.
   const pad = rows > 2 ? (hi - lo) / (rows - 2) : 0
   const min = zero && lo === 0 ? 0 : lo - pad
   const max = zero && hi === 0 ? 0 : hi + pad
   return { min, max, step: niceScale(max - min).step }
 }
 
-/** Axis label per cell row (top first) for each multiple of `step` from
- * `min` to `max`; when two ticks share a row the higher one wins. */
 export function tickRows(min: number, max: number, step: number, height: number, format: (v: number) => string): Map<number, string> {
   const rows = new Map<number, string>()
   for (let k = Math.ceil(min / step - 1e-9); k * step <= max + step * 1e-9; k++) rows.set(valueRow(k * step, min, max, height), format(k * step))

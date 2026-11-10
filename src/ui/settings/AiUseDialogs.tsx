@@ -15,7 +15,6 @@ import { fit } from "../text"
 
 const TONE: Record<HelpTone, string> = { get head() { return ink.label }, get key() { return tone.key }, get text() { return ink.note }, get muted() { return ink.note } }
 
-/** The model answering a query now, as the dialogs name it. */
 function queryModel(id: QueryId, ctx: AiContext): string {
   const model = QUERIES[id].model
   if (model === "clairic") return "Clairic (Cloudflare Workers AI)"
@@ -24,12 +23,8 @@ function queryModel(id: QueryId, ctx: AiContext): string {
 }
 const shortModel = (id: QueryId, ctx: AiContext) => QUERIES[id].model === "jev" ? "Jev" : QUERIES[id].model === "clairic" ? "Clairic" : LLM_PROVIDERS[ctx.inUse].label
 
-/** The dialogs' width: wide enough for a feature, its keys and its code. */
 const dialogWidth = (screen: number) => Math.max(60, Math.min(100, screen - 4))
 
-/** A use's dialog: the model doing it; the app features it powers (how
- * you reach each, the code); what happens without a model; its queries
- * (enter opens one); then choosing its model. */
 export function AiUseDialog() {
   const dims = useTerminalDimensions()
   const width = createMemo(() => dialogWidth(dims().width))
@@ -42,7 +37,6 @@ export function AiUseDialog() {
         const queries = () => useQueries(d().use)
         const actions = () => useActions(d().use, ctx())
         const heading = (text: string, aside = "") => <text wrapMode="none"><S fg={ink.heading} bold>{text}</S><S fg={ink.note}>{aside}</S></text>
-        // The label in a column; the value wraps beside it.
         const line = (label: string, value: string, fg: string = ink.figure) => (
           <box flexDirection="row">
             <text width={12} flexShrink={0} fg={ink.label}>{label}</text>
@@ -98,9 +92,6 @@ export function AiUseDialog() {
   )
 }
 
-/** A query: what it asks, what comes back and what's done with it, when
- * it's sent, the code; its context blocks; then the exact request, built
- * without sending anything. Scrolls. */
 export function AiQueryView() {
   const dims = useTerminalDimensions()
   const width = createMemo(() => Math.max(60, Math.min(110, dims().width - 4)))
@@ -108,7 +99,6 @@ export function AiQueryView() {
     const view = ui.state.aiSent
     return view ? queryLines(view.query, queryModel(view.query, aiContext(data)), view.part, width() - 4, view.error) : []
   })
-  // The border and hint lines, and a line of air above and below.
   const visible = createMemo(() => Math.max(5, dims().height - 8))
   createEffect(() => {
     const view = ui.state.aiSent

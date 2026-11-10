@@ -16,8 +16,6 @@ import { rowsShown, rowsToCategorise, type FilterBarView } from "./TransactionsP
 export function createManagerRows() {
   const dims = useTerminalDimensions()
   const rows = createMemo(() => data.scopedTransactions())
-  // Drawing in (chart motion "always"): each time the tab shows, the
-  // table's rows drop in top to bottom.
   const tabShowings = showings(() => ui.state.activeTab === "manager")
   const rowsReveal = useReveal(
     () => (data.state.uiPrefs.chartMotion === "always" ? String(tabShowings()) : undefined),
@@ -25,9 +23,6 @@ export function createManagerRows() {
   const highlighted = createMemo(() => ui.highlightedIds(rows()))
   const showAccount = () => selectedAccounts(data.state.accounts, data.state.accountSelection).length > 1
 
-  // The tables' rows: the height their box gets, less the header. Measured
-  // (OpenTUI's layout), not the terminal's height less a count of the
-  // chrome around it, which went stale whenever the chrome changed.
   const measureTables = (box: BoxRenderable) => {
     box.onSizeChange = () => {
       const vis = Math.max(1, box.height - 1)
@@ -44,12 +39,6 @@ export function createManagerRows() {
     }
   })
 
-  // Steady cursor: when the rows reorder by themselves (suggestions or tag
-  // candidates landing re-sort a confidence-ordered view, ask: verdicts
-  // arriving), the cursor stays on its transaction. A change of view (sort,
-  // filter, account, special view) or a cursor move keeps the index rules:
-  // `s` still goes to the top. A row that left the view leaves the cursor
-  // where it was (the next row comes up), and a range keeps its indices.
   const view = () => JSON.stringify([data.state.sortColumn, data.state.sortAscending, data.state.filterQuery, data.state.accountSelection, data.state.uncategorisedOnly, data.state.tagReview?.name ?? null])
   let seen: { view: string; index: number; id: number | undefined } | null = null
   createEffect(() => {
@@ -76,12 +65,7 @@ export function createManagerRows() {
 export function createMerchantRows(input: Pick<ReturnType<typeof createManagerRows>, "rows"> & { props: { focused: SectionId } }) {
   const { rows, props } = input
 
-  // Merchant view: the same rows grouped, with its own cursor kept in view.
   const merchants = () => ui.state.txnView === "merchants"
-  // Both tables stay mounted and m flips which shows: a toggle rebuilt the
-  // whole table each time (~25 ms each way). Hidden, a table's input holds
-  // its last value, so it doesn't re-render while hidden, and showing it
-  // again redraws only what changed meanwhile.
   const groups = createMemo<ReturnType<typeof groupByMerchant>>((was) => (merchants() || was === undefined
     ? sortMerchantGroups(groupByMerchant(rows()), ui.state.merchantSort, ui.state.merchantReverse) : was))
   const tableRows = createMemo<ReturnType<typeof rows>>((was) => (!merchants() || was === undefined ? rows() : was))
@@ -100,8 +84,6 @@ export function createMerchantRows(input: Pick<ReturnType<typeof createManagerRo
   const selCount = () => Object.keys(ui.state.selectedIds).length
 
   const sortMark = (col: string) => {
-    // Confidence is the suggestion's, shown in the Category column (a tag
-    // candidate's is in the unsorted Tags column: no mark).
     const sorted = data.state.sortColumn === "confidence" ? (data.state.tagReview ? "" : "category") : data.state.sortColumn
     if (sorted !== col) return ""
     return data.state.sortAscending ? " ▲" : " ▼"
@@ -117,14 +99,12 @@ export function createManagerIndicator(input: Pick<ReturnType<typeof createManag
     return a ? `asking Jev "${a.words}" ${a.judged}/${a.total}…` : null
   }
 
-  /** With ask: terms, how many match and how many more are near misses. */
   const askNote = () => {
     const c = data.askCounts()
     if (!c || data.state.asking) return null
     return data.nearMissesShown() ? `${c.matches} match, then ${c.near} near (≈)` : c.near ? `${c.matches} match · ${c.near} near (n)` : null
   }
 
-  /** Selected rows the view doesn't show (a filter hides them), as the Go app counts them. */
   const hiddenSelected = createMemo(() => {
     const shown = new Set(rows().map((r) => r.id))
     return Object.keys(ui.state.selectedIds).filter((id) => !shown.has(Number(id))).length
@@ -145,8 +125,6 @@ export function createManagerIndicator(input: Pick<ReturnType<typeof createManag
       confident: rows().filter((r) => (data.state.suggestions[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).length,
       suggesting: data.state.suggesting, selected: selCount(), hidden: hiddenSelected(),
     })
-    // With a filter: how many the account has in all, and selected rows the
-    // filter hides (Go app).
     return rowsShown({
       top: ui.state.managerTop, visible: ui.state.managerVisible, count: rows().length,
       total: data.state.filterQuery ? data.accountScoped().length : rows().length,
@@ -155,8 +133,6 @@ export function createManagerIndicator(input: Pick<ReturnType<typeof createManag
     })
   }
 
-  // A memo: the card reads it twice, and a cursor move should build it once.
-  // After what it reads: a memo runs as it is made.
   const scrollIndicator = createMemo(() => {
     const text = [asking(), askNote(), rowsIndicator()].filter(Boolean).join(" · ")
     return text || undefined
@@ -166,8 +142,6 @@ export function createManagerIndicator(input: Pick<ReturnType<typeof createManag
 
 export function createManagerFilter() {
 
-  // Go-style filter bar: the input stays in the pane; its canonical form is
-  // rendered next to the title.
   const filterBar = (): FilterBarView | null => {
     const editing = (ui.state.filterBar != null)
     const raw = editing ? (ui.state.filterBar?.draft ?? "") : data.state.filterQuery
@@ -175,10 +149,7 @@ export function createManagerFilter() {
     return {
       editing, raw, caret: ui.state.filterBar?.caret ?? 0,
       err: data.state.filterErr, note: data.state.filterNote,
-      // The question a smart search turned into this filter, while it still is that filter.
       question: smartQuestionFor(ui.state, raw),
-      // ask: terms make it a search Jev answers row by row, not just a filter.
-      // (A ?question being typed hasn't become a filter yet.)
       jev: !(editing && raw.trimStart().startsWith("?")) && askTerms(data.state.filterExpr).length > 0,
       writing: ui.state.smartWriting,
       drillReturn: !!ui.state.drillReturn,
@@ -192,11 +163,7 @@ export function createManagerPreviews() {
 
   const accountAction = () => data.state.accounts.find((account) => account.id === (ui.state.accountAction?.id ?? null))
 
-  /** Accept-all's preview: per suggested category, how many rows and which
-   * (descriptions, most common first; money in marked), so a wrong pick
-   * shows before it is taken. */
   const acceptGroups = createMemo(() => {
-    // As tagPreview: only while it shows, through the plain rows.
     if (!ui.state.acceptPreview?.length) return []
     const groups = new Map<number, Map<string, number>>()
     const byId = new Map(data.transactions().map((t) => [t.id, t]))
@@ -204,7 +171,6 @@ export function createManagerPreviews() {
       const s = data.state.suggestions[id], t = byId.get(id)
       if (!s || !t) continue
       const rows = groups.get(s.categoryId) ?? new Map<string, number>()
-      // What it bought says more than "Amazon ×6": each such row by its first item.
       const item = t.bought?.[0]?.name
       const label = `${item ? truncate(item, 28) : t.description.trim()}${t.amount > 0 ? " (in)" : ""}`
       rows.set(label, (rows.get(label) ?? 0) + 1)
@@ -218,14 +184,10 @@ export function createManagerPreviews() {
   })
   const ACCEPT_LINES = 8
   const RULE_LINES = 6
-  /** R's offers, while its modal is open. */
   const ruleOffers = createMemo(() => (ui.state.ruleOffers !== null ? data.allRuleOffers() : []))
   const ruleTop = () => Math.max(0, ui.state.ruleOffers!.cursor - RULE_LINES + 1)
 
-  /** Tag-all's preview: the rows it would tag, by description (money in marked). */
   const tagPreview = createMemo(() => {
-    // Only while the preview shows; through the plain rows, not the store's
-    // proxies (a tracked read per field of every row).
     if (!ui.state.acceptPreview?.length) return []
     const byId = new Map(data.transactions().map((t) => [t.id, t]))
     const counts = new Map<string, number>()
@@ -238,7 +200,6 @@ export function createManagerPreviews() {
     return [...counts].sort((a, b) => b[1] - a[1]).map(([label, n]) => (n > 1 ? `${label} ×${n}` : label))
   })
 
-  /** A row's candidate in a tag review, for the Tags column. */
   const tagCandidate = (id: number): TableTagCandidate | undefined => {
     const review = data.state.tagReview
     const c = review?.candidates[id]

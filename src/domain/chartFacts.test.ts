@@ -14,7 +14,6 @@ test("flowRows are the rows computePeriodFlows sums: spent and money in", () => 
   const { spent, income } = flowRows([spending, saver], rows)
   expect(-spent.reduce((s, t) => s + t.amount, 0)).toBe(flows.spent)
   expect(income.reduce((s, t) => s + t.amount, 0)).toBe(flows.income)
-  // Charts name a bar after its biggest outgoing row.
   const outs = spent.filter((t) => t.amount < 0)
   expect(biggestRow(outs, "2026-10-01", "2026-10-31")?.id).toBe(1)
   expect(biggestRow(outs, "2026-10-02", "2026-10-02")?.id).toBe(2)
@@ -35,7 +34,6 @@ test("Available projected to payday: a usual day off each day, and each charge o
 })
 
 test("a usual day leaves out regular payments and the biggest tenth of days", () => {
-  // 20 days of $10, one day with a $900 one-off, rent on another.
   const rows = [
     ...Array.from({ length: 20 }, (_, i) => row(i + 1, `2026-10-${String(i + 1).padStart(2, "0")}`, -10)),
     row(50, "2026-10-05", -900), row(51, "2026-10-08", -1200, { description: "RENT" }),

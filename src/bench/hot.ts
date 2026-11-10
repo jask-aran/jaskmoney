@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs"
 
-/** The hottest functions in a .cpuprofile: self time and total (inclusive) time, top N. */
 const [path, n = "25"] = process.argv.slice(2)
 const profile = JSON.parse(readFileSync(path!, "utf8")) as { nodes: { id: number; callFrame: { functionName: string; url: string; lineNumber: number }; children?: number[] }[]; samples: number[]; timeDeltas: number[] }
 const byId = new Map(profile.nodes.map((node) => [node.id, node]))

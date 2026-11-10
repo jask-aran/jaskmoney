@@ -70,7 +70,6 @@ describe("MVP slice: filter + categorize", () => {
     const targetId = data.scopedTransactions()[0]!.id
     const initialSort = data.state.sortColumn
     const initialAscending = data.state.sortAscending
-    // Sorting outlives data.init(); put it back for the tests that follow.
     onTestFinished(() => data.setState({ sortColumn: initialSort, sortAscending: initialAscending }))
 
     handleKey(ui, key("t"), data)
@@ -90,7 +89,6 @@ describe("MVP slice: filter + categorize", () => {
     expect(data.state.sortAscending).toBe(!beforeDirection)
   })
 })
-
 
 describe("default ANZ profile import", () => {
   test("preserves ANZ dates, amounts, and joined descriptions without a header", () => {
@@ -135,8 +133,6 @@ describe("default ANZ profile import", () => {
     expect(txns).toHaveLength(2)
     expect(txns.every((t) => t.accountName === "ANZ CREDIT")).toBe(true)
     expect(txns.every((t) => t.categoryName === "Uncategorised")).toBe(true)
-    // Rows repeated within one file are kept on first import (the original
-    // Go app did the same); a re-import skips each of them as a dupe.
     const repeated = buildImportPreview(db, csv + '\n03/02/2026,"-20.00",COFFEE', "anz.csv", DEFAULT_IMPORT_PROFILES[0]!)
     const repeatedResult = commitImportPreview(db, repeated, true)
     expect(repeatedResult.inserted).toBe(0)

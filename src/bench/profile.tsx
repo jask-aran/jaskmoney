@@ -9,11 +9,6 @@ import { data } from "../state/dataStore"
 import { ui } from "../state/uiStore"
 import { keyEvent as key } from "../app/keyEvent"
 
-/**
- * One scenario for a CPU profile: `bun --cpu-prof --cpu-prof-dir=<dir>
- * --conditions=browser src/bench/profile.tsx <scenario>`, then read it with
- * src/bench/hot.ts. Scenarios: txns, overview, range, chip, account, tabs, detail, budgets.
- */
 const scenario = process.argv[2] ?? "txns"
 for (const name of ["JASKMONEY_UP_TOKEN", "JASKMONEY_JEV_TOKEN", "JASKMONEY_CF_TOKEN"]) process.env[name] = ""
 process.env.JASKMONEY_DB = ":memory:"
@@ -45,7 +40,6 @@ for (let i = 0; i < 300; i++) {
   drawing += performance.now() - b
   each.push(performance.now() - a)
 }
-// The median as well: on a busy machine the mean takes in other work.
 const median = each.sort((x, y) => x - y)[each.length >> 1]!
 console.log(`${scenario}: ${((handling + drawing) / 300).toFixed(1)} ms/key, median ${median.toFixed(1)} (key and updates ${(handling / 300).toFixed(1)}, frame ${(drawing / 300).toFixed(1)})`)
 t.renderer.destroy()

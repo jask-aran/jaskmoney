@@ -1,6 +1,5 @@
 import type { DemoCategory } from "./demo"
 
-/** Public Up category names; no account or transaction data enters this list. */
 export const DEMO_CATEGORIES: readonly DemoCategory[] = [
   ...[
     { name: "Home", color: "#89b4fa", children: ["Groceries", "Rent & Mortgage", "Utilities", "Internet", "Homeware & Appliances", "Maintenance & Improvements", "Pets", "Rates & Insurance"] },
@@ -18,7 +17,6 @@ export const DEMO_CATEGORIES: readonly DemoCategory[] = [
   { name: "People", color: "#f5c2e7", parent: null },
 ]
 
-/** Rates are per category, per month; amounts are AUD medians. */
 export const MERCHANTS = [
   { category: "Groceries", names: ["Coles", "Woolworths", "ALDI", "IGA", "Harris Farm Markets", "Bakers Delight", "The Source Bulk Foods"], amount: 90, spread: 0.3, frequency: 4.5, essential: true },
   { category: "Restaurants & Cafes", names: ["Gloria Jean's", "Seven Seeds", "Patricia Coffee Brewers", "Market Lane Coffee", "Pellegrini's", "Chin Chin", "Grill'd", "Din Tai Fung"], amount: 17, spread: 0.65, frequency: 19, essential: false },

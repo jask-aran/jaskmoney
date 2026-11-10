@@ -13,7 +13,6 @@ test("a cycle's budget is the one in force when it started; before the first, th
   expect(budgetIn(history, overall, "2026-10-14")).toBe(2500)
   expect(budgetIn(history, overall, "2026-11-14")).toBe(2500)
   expect(budgetIn(history, overall, "2027-01-14")).toBeNull()
-  // Before a budget's first entry it had none.
   const later = [{ scope: { kind: "category", categoryId: 3 } as const, amount: 300, from: "2026-10-14" }]
   expect(budgetIn(later, { kind: "category", categoryId: 3 }, "2026-05-14")).toBeNull()
   expect(budgetIn(later, { kind: "category", categoryId: 3 }, "2026-10-14")).toBe(300)

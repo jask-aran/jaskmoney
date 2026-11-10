@@ -2,15 +2,10 @@ import type { CoreState, ServerMessage, ClientMessage } from "../core/protocol"
 import type { Transaction } from "../domain/types"
 import type { CoreLink } from "./link"
 
-/**
- * The core over a WebSocket (server/serve's /api), from Bun (the TUI
- * with --connect). Calls made before the socket opens wait for it. When it closes, the calls still waiting fail and `onClose` hears why.
- */
 export function wsLink(url: string, { onClose }: { onClose?: (reason: string) => void } = {}): CoreLink & { close(): void } {
   const socket = new WebSocket(url)
   const waiting = new Map<number, { resolve: (value: never) => void; reject: (error: Error) => void; onProgress?: (data: never) => void }>()
   const listeners = new Set<(patch: Partial<CoreState>) => void>()
-  /** Everything heard so far, for a listener that comes late. */
   const seen: Partial<CoreState> = {}
   const outbox: string[] = []
   let nextId = 1
@@ -59,7 +54,6 @@ export function wsLink(url: string, { onClose }: { onClose?: (reason: string) =>
       return new Promise<unknown>((resolve, reject) => {
         waiting.set(id, { resolve, reject, onProgress: options.onProgress as never })
         send({ t: "call", id, method, params })
-        // Cancelled already: the core hears it at once, as a local call sees its signal.
         if (signal?.aborted) cancel()
         else signal?.addEventListener("abort", cancel, { once: true })
       }).finally(() => signal?.removeEventListener("abort", cancel)) as never
@@ -74,11 +68,9 @@ export function wsLink(url: string, { onClose }: { onClose?: (reason: string) =>
 }
 
 function createWholeSlices(seen: Partial<CoreState>) {
-  /** Transactions by id, in the core's order. */
   const rows = new Map<number, Transaction>()
   let order: number[] = []
 
-  /** The keyed slices and transactions a message changes, whole again. */
   function wholeSlices(message: Extract<ServerMessage, { t: "state" }>): Partial<CoreState> {
     const whole: Record<string, unknown> = {}
     for (const [slice, change] of Object.entries(message.keyed ?? {})) {

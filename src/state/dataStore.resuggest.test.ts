@@ -5,7 +5,6 @@ import { testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
 import { answeringMerchants } from "../testing/fixtures"
 
-/** CSV rows (so categorising never calls Up), no Jev key, no network. */
 function setup() {
   testEnv("JASKMONEY_JEV_TOKEN", "")
   const network = spyOn(globalThis, "fetch").mockImplementation(Object.assign(() => { throw new Error("network is forbidden") }, { preconnect: globalThis.fetch.preconnect }))
@@ -23,7 +22,6 @@ function setup() {
 }
 
 const description = (q: JevQuestion) => (q.instructions as { transaction: { description: string; categorised_before?: string } }).transaction
-/** A fake Jev picking `categoryId` at 0.9 for every row; `seen` records what it was shown. */
 function fakeJev(categoryId: number, seen: Array<{ description: string; categorised_before?: string }> = [], gate?: Promise<void>): Pick<JevClient, "judge"> {
   return answeringMerchants({ async judge(questions) {
     if (gate) await gate
@@ -42,17 +40,15 @@ test("categorising a row re-asks about the waiting rows with the same descriptio
   add(1, "Corner Bar")
   add(2, " corner bar ")
   add(3, "Other")
-  add(4, "Corner Bar") // dismissed earlier: no suggestion, so not re-suggested
+  add(4, "Corner Bar")
   saveSuggestions(db, [1, 2, 3].map((id) => ({ transactionId: id, categoryId: 101, confidence: 0.6, source: "jev" as const })))
   data.refresh()
   await data.categorizeTransactions([1], 100)
   const seen: Array<{ description: string; categorised_before?: string }> = []
   expect(await data.resuggestLike([1], fakeJev(100, seen))).toBe(1)
-  // Only row 2 was asked about, and Jev was told how row 1 went.
   expect(seen).toEqual([expect.objectContaining({ description: "corner bar", categorised_before: "Test food ×1" })])
   expect(suggestion(2)).toEqual({ categoryId: 100, source: "jev" })
   expect(suggestion(3)).toEqual({ categoryId: 101, source: "jev" })
   expect(suggestion(4)).toBeUndefined()
-  // Nothing alike waiting: nothing asked.
   expect(await data.resuggestLike([3], fakeJev(100, seen))).toBe(0)
 })

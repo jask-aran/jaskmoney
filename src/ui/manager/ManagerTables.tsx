@@ -24,8 +24,6 @@ function createManagerTables(input: Pick<ReturnType<typeof createMerchantRows>, 
         flexGrow={1}
         bottom={scrollIndicator()}
       >
-        {/* Sized by the space it's given (flexBasis 0), never by its rows: a
-            table drawing the rows it was told to would hold its box at that size. */}
         <box ref={measureTables} flexGrow={1} flexBasis={0} overflow="hidden" width="100%" flexDirection="column">
         <box visible={merchants()} flexGrow={1} width="100%" flexDirection="column">
           <MerchantTable
@@ -37,7 +35,6 @@ function createManagerTables(input: Pick<ReturnType<typeof createMerchantRows>, 
             sort={ui.state.merchantSort}
             reverse={ui.state.merchantReverse}
             empty={data.state.filterQuery ? "No matches" : "Empty · no transactions loaded"}
-            // Hidden, no notes: each reads the whole-history note prompts.
             note={merchants() ? merchantNote : noNote}
           />
         </box>
@@ -71,8 +68,6 @@ function createManagerTables(input: Pick<ReturnType<typeof createMerchantRows>, 
 
 const noNote = () => null
 
-/** A merchant's note for the table, or a prompt for one where it would
- * help (domain/suggest notePrompts): "always Groceries? n", "varies? n". */
 function merchantNote(merchant: string): { text: string; prompt: boolean } | null {
   const key = merchantKey(merchant)
   const note = data.state.merchantNotes[key]

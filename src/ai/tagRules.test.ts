@@ -4,19 +4,6 @@ import { data } from "../state/dataStore"
 import { testEnv } from "../testing/scoped"
 import { writeRules } from "./ruleWriter"
 
-/**
- * Backlog 11, AI tag rules (acceptance, frozen): the rule writer can propose
- * a rule that adds a tag (`tag` instead of `category` in its proposal and in
- * test_rule), checked by the same bar on the tag (RULE_SHARE of the rows it
- * finds already carry the tag, RULE_AFTER or more of them, no rule already
- * adds it, not declined, not IGNORE). A tag offer has `tagId` and a null
- * `categoryId`; `waiting` is the rows it finds without the tag. Making it
- * creates a rule that adds the tag and tags the waiting rows; undo takes both
- * back. Declining is remembered like a category offer's.
- *
- * CSV rows: "Qantas" (9, tagged TRAVEL), "Qantas" (1, untagged), "Uber" (2
- * TRAVEL, 2 not), "Bunnings" (1 TRAVEL).
- */
 async function setup() {
   testEnv("JASKMONEY_OPENROUTER_TOKEN", "")
   data.init(":memory:")
@@ -64,7 +51,6 @@ test("tag proposals are checked by the same bar; test_rule takes a tag", async (
   expect(result.offers).toHaveLength(1)
   expect(result.offers[0]).toMatchObject({ source: "ai", description: "Qantas is travel", expr: "desc:Qantas", categoryId: null, tagId: travel, agreeing: 9, categorised: 10, waiting: [untagged], why: "9 of 10 tagged" })
   expect(result.rejected.map((r) => r.rule.name).sort()).toEqual(["Bunnings", "Ignore it", "No such tag", "Uber is travel"])
-  // The model's test of a tag rule ran (an error would end the run with no offers).
   expect(result.calls.map((c) => c.name)).toContain("test_rule")
 })
 
@@ -77,7 +63,6 @@ test("making a tag offer adds a rule that tags the waiting rows; undo takes both
   const summary = await data.makeOfferedRule(offer)
   expect(summary).toContain("TRAVEL")
   const rule = data.state.rules.find((r) => r.addTagIds.includes(travel))!
-  // A plain copy: Bun's toMatchObject rejects the store's proxy arrays.
   expect({ ...rule, addTagIds: [...rule.addTagIds] }).toMatchObject({ setCategoryId: null, addTagIds: [travel], enabled: true })
   expect(tagsOf(untagged)).toContain(travel)
   expect(data.state.aiRuleOffers).toHaveLength(0)

@@ -7,20 +7,6 @@ import { editText, type TextField, type TextKey } from "../domain/textField"
 import type { Account, BoughtItem, Category, Transaction } from "../domain/types"
 import { CHART_VIEWS } from "./uiStore"
 
-/**
- * The setup's tour (state/welcome's "tour" step), pure: the made-up world
- * its demos run on, each demo's script as a function of the time into it,
- * and trying one yourself.
- *
- *   playing ──t / Try it──▶ trying ──esc──▶ playing (from the start)
- *
- * Trying freezes the demo exactly where its script had got to (tryFrom)
- * and hands the keys over (tryKey): the filter to edit, rows to move
- * through, suggestions to accept, chart views to switch. All of it on the
- * demo's own rows: nothing reaches your data. Smart search can't be
- * tried: no AI is connected yet. ui/welcome/Demos draws either through
- * the app's own Transactions pane, filter engine and charts.
- */
 export const DEMOS = [
   { id: "chart", name: "Charts", caption: [["h/l", "the Overview's views: spending, cash flow, balances, savers,"], ["", "the calendar and your subscriptions"]] },
   { id: "filter", name: "Filter", caption: [["/", "filters as you type: words, amt:, cat:, date:, combined"]] },
@@ -30,29 +16,19 @@ export const DEMOS = [
 
 export const DEMO_COUNT = DEMOS.length
 
-/** Whether demo `demo` can be tried (not Smart search: it needs the AI). */
 export const triable = (demo: number) => DEMOS[demo]?.id !== "ask"
 
-// ---- The world: demo mode's made-up years, as ordinary rows.
-
 export interface DemoWorld {
-  /** Newest first, as the Transactions table sorts. */
   rows: Transaction[]
   spending: Transaction[]
   accounts: Account[]
-  /** What cat:, acc: and tag: values are found among, as the store's. */
   names: FilterNames
-  /** The store's categories, the world's ids where names match. */
   categories: Category[]
   today: string
 }
 
 let cached: { key: string; world: DemoWorld } | null = null
 
-/** Demo mode's life (domain/demo), the same years it shows, turned into
- * rows the real table, filter engine and charts take. Categories take the
- * store's ids where the names match, so suggestions and icons resolve as
- * they do in the app. */
 export function demoWorld(categories: Category[]): DemoWorld {
   const today = appToday()
   const key = `${today}:${categories.length}`
@@ -80,7 +56,6 @@ export function demoWorld(categories: Category[]): DemoWorld {
         notes: "", importId: null, accountId: account?.id ?? null, accountName: account?.name ?? "",
         tagNames: [], tagColors: [], tagIds: [], source: "up", status: "SETTLED",
         transactionType: t.transactionType, message: t.message, rawText: t.rawText, foreignAmount: t.foreignAmount, cardMethod: t.cardMethod,
-        // Transfers name their saver, so its balance moves (in and out).
         createdMs: null, transferAccountId: t.transferToKey ? (accounts.get(t.transferToKey)?.id ?? null) : null, internal,
         excluded: internal || !!theirs?.notSpending, income: !!theirs?.income,
       }
@@ -93,13 +68,9 @@ export function demoWorld(categories: Category[]): DemoWorld {
 }
 
 export interface TourTopics { shop: string; category: string; lastMonth: string; cut: number; categories: string[]
-  /** This year so far, as a date: range. */
   year: string }
 
-/** What the world makes good to search for: its commonest shop and
- * category, and an amount that keeps about half the shop's rows. */
 export function tourTopics(world: DemoWorld): TourTopics {
-  // Over all of it, so a trip's hotel doesn't win: an everyday shop.
   const spent = world.spending.filter((t) => t.amount < 0)
   const count = (key: (t: Transaction) => string) => {
     const n = new Map<string, number>()
@@ -113,18 +84,12 @@ export function tourTopics(world: DemoWorld): TourTopics {
   return { shop, category, lastMonth: addMonths(world.today, -1).slice(0, 7), cut, categories: count((t) => t.categoryName).slice(0, 4), year: `${world.today.slice(0, 4)}-01..${world.today.slice(0, 7)}` }
 }
 
-/** A filter as the store reads it (liveFilter, the world's names) and
- * the rows it keeps (no ask: terms: no AI here). */
 export function demoFilter(world: DemoWorld, text: string) {
   const live = liveFilter(text, world.names)
   const expr = live.expr
   return { ...live, preview: expr ? filterExprString(expr) : text, rows: expr ? applyTop(expr, world.rows.filter((t) => evalFilter(expr, t))) : world.rows }
 }
 
-// ---- The scripts: what each demo shows `ms` into it (each loops).
-
-/** Text typed by a script of [start ms, text, ms per char]; later entries
- * replace earlier ones, erasing back to their common start first. */
 export function typed(ms: number, script: Array<[number, string, number]>): string {
   let shown = ""
   for (const [start, text, per] of script) {
@@ -143,23 +108,17 @@ export function typed(ms: number, script: Array<[number, string, number]>): stri
 
 const FILTER_LOOP = 13000
 
-/** Filter: a shop, then an amount, then a category and last month. */
 export function filterAt(ms: number, t: TourTopics): string {
   return typed(ms % FILTER_LOOP, [[700, t.shop, 110], [2600, `${t.shop} amt:<-${t.cut}`, 110], [6200, `cat:"${t.category}" date:${t.lastMonth}`, 90], [11800, "", 40]])
 }
 
 interface AskFrame {
-  /** What's in the bar: ?words while asking, then the filter written. */
   raw: string
   editing: boolean
   writing: boolean
-  /** Once written: the question it was written for. */
   question: string | null
 }
 
-/** What the Smart search demo asks, and the filter Jev's answer is
- * (scripted: no model is asked), from what the demo year makes good to
- * find. */
 function askScript(t: TourTopics): Array<{ words: string; filter: string }> {
   const plain = (c: string) => c.toLowerCase().replace(" & ", " and ")
   const second = t.categories[1] ?? t.category
@@ -173,9 +132,6 @@ function askScript(t: TourTopics): Array<{ words: string; filter: string }> {
 
 const ASK_TYPE_MS = 42, ASK_WRITING_MS = 650, ASK_EDITING_MS = 450, ASK_SHOWN_MS = 1700, ASK_ERASE_MS = 250
 
-/** Smart search: ? and words, Jev writing, the filter it wrote (still
- * being edited), applied for a moment, then the next search. Each search
- * takes about four seconds. */
 const askSpans = (t: TourTopics) => askScript(t).map((s) => s.words.length * ASK_TYPE_MS + ASK_WRITING_MS + ASK_EDITING_MS + ASK_SHOWN_MS + ASK_ERASE_MS)
 
 export function askAt(ms: number, t: TourTopics): AskFrame {
@@ -191,40 +147,26 @@ export function askAt(ms: number, t: TourTopics): AskFrame {
   if (m < ASK_WRITING_MS) return { raw: `?${words}`, editing: true, writing: true, question: null }
   m -= ASK_WRITING_MS
   if (m < ASK_EDITING_MS + ASK_SHOWN_MS) return { raw: filter, editing: m < ASK_EDITING_MS, writing: false, question: words }
-  // Cleared for the next.
   return { raw: "?", editing: true, writing: false, question: null }
 }
 
 interface Suggestion { categoryId: number; confidence: number; source: "history" | "jev" }
 export interface Waiting {
-  /** Uncategorised, as they'd wait in the app. */
   rows: Transaction[]
-  /** By row id: the suggestion, and the category it names. */
   suggestions: Record<number, Suggestion>
   names: Record<number, string>
-  /** By row id: the row as it was, its category on (the detail pane shows it). */
   originals: Record<number, Transaction>
 }
 
-/** Made-up orders (demo mode has no Amazon or eBay): what each bought,
- * as its order email says, and the categories it belongs in, likeliest
- * first (the first one the store has is used). */
 const ORDERS: Array<{ description: string; bought: BoughtItem[]; categories: string[] }> = [
   { description: "Amazon AU", bought: [{ name: "Philips Hue starter kit, 3 bulbs and bridge", quantity: 1, price: 89.95 }], categories: ["Technology", "Homeware & Appliances", "Shopping"] },
   { description: "eBay", bought: [{ name: "USB-C cable, braided, 2 m", quantity: 2, price: 12.2 }], categories: ["Technology", "Shopping"] },
   { description: "Amazon AU", bought: [{ name: "Vitamin D3 1000 IU, 250 tablets", quantity: 1, price: 18.99 }, { name: "Fish oil 1000 mg, 400 capsules", quantity: 1, price: 18.99 }], categories: ["Health & Medical", "Health", "Pharmacy", "Shopping"] },
 ]
 
-/** The suggestions' confidences down the list: the first nine at 80% or
- * more (Y takes them), the rest less sure. */
 const CONFIDENCES = [0.98, 0.97, 0.95, 0.94, 0.92, 0.9, 0.88, 0.85, 0.82, 0.78, 0.74, 0.71, 0.69, 0.66, 0.63, 0.6, 0.58, 0.55, 0.53, 0.5, 0.48, 0.46, 0.44, 0.42, 0.4, 0.38, 0.36]
-/** Where the orders sit: two among the sure ones, one (the vitamins) just
- * under 80%, so it's still waiting after Y and its detail can be opened. */
 const ORDER_AT = [1, 4, 10]
 
-/** Suggestions: recent rows with their categories taken off, three of
- * them orders whose emails say what they bought (Details), each with a
- * suggestion, surest first. */
 export function waiting(world: DemoWorld): Waiting {
   const byName = new Map(world.categories.map((c) => [c.name.toLowerCase(), c]))
   const picks = world.spending.filter((r) => r.categoryId != null && r.categoryId > 0 && r.amount < 0).slice(0, CONFIDENCES.length - ORDER_AT.length)
@@ -246,9 +188,6 @@ export function waiting(world: DemoWorld): Waiting {
 }
 
 const SUGGEST_LOOP = 10500
-/** Suggestions: the keys the script presses, [ms into the loop, key]:
- * Y first (every sure one), a y, the order's detail opened and closed,
- * then a quick run of accepts, dismissals and moves. */
 const SUGGEST_KEYS: Array<[number, TryKey]> = [
   [1100, key("y", "Y", true)], [2300, key("y")], [2900, key("return", "\r")], [5000, key("escape", "\x1b")],
   [5500, key("y")], [5850, key("x")], [6200, key("j")], [6500, key("y")], [6800, key("y")], [7100, key("x")], [7400, key("j")], [7700, key("y")], [8000, key("y")],
@@ -258,8 +197,6 @@ function key(name: string, sequence = name, shift = false): TryKey {
   return { name, sequence, ctrl: false, meta: false, shift }
 }
 
-/** The suggestions demo `ms` in: the keys pressed so far, played through
- * tryKey (as trying it does), and the one just pressed. */
 export function suggestAt(ms: number, world: DemoWorld): { state: DemoTry; pressed: string | null } {
   const loop = ms % SUGGEST_LOOP
   let state = blankTry()
@@ -272,17 +209,12 @@ export function suggestAt(ms: number, world: DemoWorld): { state: DemoTry; press
   return { state, pressed }
 }
 
-// Charts: the Overview's views (CHART_VIEWS), in turn, each long enough
-// to draw in and be looked at. 3.6 s: 0.9 to draw in (TOUR_CHART_MS), the rest to be looked at; at 2.2
-// it moved on too soon (2026-11-01 first-run test).
 const CHART_VIEW_MS = 3600
 
 export function chartViewAt(ms: number): number {
   return Math.floor(ms / CHART_VIEW_MS) % CHART_VIEWS.length
 }
 
-/** How long a demo's script runs before it starts again (the README's
- * recordings are one loop: scripts/recordings.ts). */
 export function demoLoopMs(id: (typeof DEMOS)[number]["id"], t: TourTopics): number {
   if (id === "chart") return CHART_VIEW_MS * CHART_VIEWS.length
   if (id === "filter") return FILTER_LOOP
@@ -290,27 +222,18 @@ export function demoLoopMs(id: (typeof DEMOS)[number]["id"], t: TourTopics): num
   return askSpans(t).reduce((a, b) => a + b, 0)
 }
 
-// ---- Trying a demo yourself.
-
 export interface DemoTry {
-  /** Filter and Smart search: the filter, yours to edit. */
   filter: TextField
-  /** The table's cursor. */
   cursor: number
-  /** Suggestions: accepted (gone from the list) and dismissed, by row id. */
   accepted: number[]
   dismissed: number[]
-  /** Suggestions: the row whose detail is open. */
   detail: number | null
-  /** Charts: the view (CHART_VIEWS). */
   view: number
-  /** What the last key did. */
   note: string | null
 }
 
 const blankTry = (): DemoTry => ({ filter: { value: "", caret: 0 }, cursor: 0, accepted: [], dismissed: [], detail: null, view: 0, note: null })
 
-/** The demo `demo`, `ms` into its script, frozen as it stands. */
 export function tryFrom(demo: number, ms: number, world: DemoWorld): DemoTry {
   const base = blankTry()
   switch (DEMOS[demo]?.id) {
@@ -321,7 +244,6 @@ export function tryFrom(demo: number, ms: number, world: DemoWorld): DemoTry {
   }
 }
 
-/** The rows a try shows: what its filter keeps, or what's still waiting. */
 function tryRows(demo: number, s: DemoTry, world: DemoWorld): Transaction[] {
   const id = DEMOS[demo]?.id
   if (id === "suggest") return waiting(world).rows.filter((r) => !s.accepted.includes(r.id))
@@ -333,7 +255,6 @@ type TryKey = TextKey & { shift?: boolean }
 
 const capital = (key: TryKey, letter: string) => key.sequence === letter.toUpperCase() || (key.name === letter && !!key.shift)
 
-/** A key while trying: the next state, or null when it isn't the demo's. */
 export function tryKey(demo: number, s: DemoTry, key: TryKey, world: DemoWorld): DemoTry | null {
   const id = DEMOS[demo]?.id
   const rows = tryRows(demo, s, world)
@@ -348,7 +269,6 @@ export function tryKey(demo: number, s: DemoTry, key: TryKey, world: DemoWorld):
     return next ? { ...s, filter: next, cursor: 0, note: null } : null
   }
   if (id === "suggest") {
-    // The detail pane: open on enter, closed by esc (or enter again).
     if (s.detail != null) return name === "escape" || name === "return" || name === "enter" ? { ...s, detail: null } : null
     if ((name === "return" || name === "enter") && rows[s.cursor]) return { ...s, detail: rows[s.cursor]!.id }
     if (name === "up" || name === "k") return move(-1)
@@ -380,7 +300,6 @@ export function tryKey(demo: number, s: DemoTry, key: TryKey, world: DemoWorld):
   return null
 }
 
-/** What trying a demo lets you do, for the card and the footer. */
 export function tryHints(demo: number): Array<{ key: string; desc: string }> {
   switch (DEMOS[demo]?.id) {
     case "filter": return [{ key: "type", desc: "the filter" }, { key: "↑↓", desc: "rows" }]

@@ -13,18 +13,9 @@ import { nextStep, previousStep, welcomeBackdrop, welcomeGo, welcomeRows, toggle
 import { openBrowser } from "./llmSignIn"
 import { runSync } from "./sync"
 
-/**
- * The first-run setup's effects (state/welcome is the machine, ui/welcome
- * the screens): checking an Up token with Up before it's saved, the
- * models' sign-ins (their own dialogs open over the setup), and connecting
- * Gmail through Executor end to end, so the user only signs in and
- * approves in the browser. `sources` is replaced in tests.
- */
 export const sources = {
   open: openBrowser as (url: string) => void,
-  /** Market prices for the ticker tape backdrop (null: keep the made-up ones). */
   tickers: () => fetchTickers(),
-  /** Up's accounts for a token, all to sync until chosen otherwise: Up answering is the check. */
   upAccounts: async (token: string): Promise<UpChoice[]> => (await createUpClient({ token }).listAccounts())
     .map((a) => ({ id: a.id, name: a.attributes.displayName, type: a.attributes.accountType, ownership: a.attributes.ownershipType, on: true })),
   executorSignedIn: () => executorSignedIn(),
@@ -33,7 +24,6 @@ export const sources = {
   mailAccount: (app: Parameters<typeof mailAccount>[0]) => mailAccount(app),
   connectLink: (app: Parameters<typeof gmailConnectLink>[0]) => gmailConnectLink(app),
   waitForAccount: (app: Parameters<typeof waitForMailAccount>[0], signal: AbortSignal) => waitForMailAccount(app, { signal }),
-  /** The order emails Gmail finds (read-only), through the first linked account. */
   countOrders: async (): Promise<number> => {
     const account = (await gmailAccounts())[0]
     if (!account) throw new Error("Executor reaches no Gmail account yet")
@@ -45,7 +35,6 @@ return { count: (list.messages ?? []).length };`) as { count?: number }
 
 const UP_TOKEN_PAGE = "https://api.up.com.au/getting_started"
 
-/** What's connected now (the AI pane's view of it, and Executor's sign-in). */
 export function welcomeContext(data: DataStore): WelcomeContext {
   const ctx = aiContext(data)
   return {
@@ -59,7 +48,6 @@ export function welcomeContext(data: DataStore): WelcomeContext {
   }
 }
 
-/** At start: the setup opens itself the first time, until it's been through once. */
 export function shouldWelcome(data: DataStore): boolean {
   return !data.state.welcomed && !data.state.upToken && !data.state.demo
 }
@@ -68,11 +56,8 @@ export function openWelcome(ui: UiStore): void {
   ui.setState({ welcome: welcomeStart() })
 }
 
-/** The ticker tape's real prices: asked now and every two minutes while
- * the setup is open and the tape is its backdrop. Returns a stop. */
 export function followTickers(ui: UiStore): () => void {
   let stopped = false
-  // The status line says when they're real (welcomeStatus).
   const ask = async () => {
     const tickers = await sources.tickers()
     if (!stopped && tickers && ui.state.welcome) ui.setState("welcome", { tickers })
@@ -82,20 +67,14 @@ export function followTickers(ui: UiStore): () => void {
   return () => { stopped = true; clearInterval(timer) }
 }
 
-/** The status line a start leaves: how many transactions there are, or
- * how to bring some in. At start-up, and as the setup closes (its own
- * notes, a ticker tape's, have had their moment). */
 export function restingStatus(ui: UiStore, data: DataStore): void {
-  // On a core elsewhere (--connect url, or --connect=url).
   const remote = process.argv.some((a) => a === "--connect" || a.startsWith("--connect="))
   if (data.state.transactions.length > 0) ui.setStatus(`${data.state.transactions.length} transactions loaded.${remote ? " · on a remote core" : ""}`)
   else ui.setStatus("No transactions yet · Settings → Database & Import → i to import")
 }
 
-/** Leave the setup, finished or skipped: it won't open by itself again. */
 function closeWelcome(ui: UiStore, data: DataStore): void {
   emailFlow?.abort()
-  // A tab switch closes every dialog, the setup's own and any it opened.
   ui.switchTab("overview")
   void data.setWelcomed(true)
   restingStatus(ui, data)
@@ -104,9 +83,6 @@ function closeWelcome(ui: UiStore, data: DataStore): void {
 function go(ui: UiStore, step: WelcomeState["step"] | null, data: DataStore): void {
   const state = ui.state.welcome
   if (!state) return
-  // Leaving the Up step (Continue, s, the rail, or finishing) with its
-  // accounts chosen: a sync with that choice, the first one, its switched-off
-  // accounts never fetched. Again only if the choice changed since.
   if (state.step === "up" && step !== "up" && state.upAccounts) {
     const off = state.upAccounts.filter((a) => !a.on).map((a) => a.id)
     if (off.join() !== state.upSyncedOff) {
@@ -118,37 +94,29 @@ function go(ui: UiStore, step: WelcomeState["step"] | null, data: DataStore): vo
   ui.setState("welcome", { ...welcomeGo(state, step), ...(step === "tour" ? { demoAt: performance.now() } : {}) })
 }
 
-/** Go to a step from the rail (a click). */
 export function welcomeJump(ui: UiStore, data: DataStore, step: WelcomeState["step"]): void {
   const state = ui.state.welcome
   if (!state || state.busy || state.step === step) return
   go(ui, step, data)
 }
 
-/** Show demo `demo` from the start of its script. */
 function showDemo(ui: UiStore, demo: number): void {
   ui.setState("welcome", { demo: Math.max(0, Math.min(DEMO_COUNT - 1, demo)), demoAt: performance.now(), trying: null, cursor: 0 })
 }
 
-/** Freeze the demo where its script has got to, and hand over its keys. */
 function startTry(ui: UiStore, data: DataStore): void {
   const state = ui.state.welcome
   if (!state || state.step !== "tour" || !triable(state.demo)) return
   ui.setState("welcome", { trying: tryFrom(state.demo, performance.now() - state.demoAt, demoWorld(data.state.categories)), cursor: 0 })
 }
 
-/** Keys while the setup is open (it owns them; a dialog it opened takes them first). */
 export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const state = ui.state.welcome
   if (!state || !data) return
   const { name } = key
   const rows = welcomeRows(state, welcomeContext(data))
-  // The Up screen is for typing the token: printable keys are the token's.
   const typing = rows.some((r) => r.action === "token") && !state.busy
-  // Trying a demo: its keys first; esc (or enter on "Back") gives it back.
   if (state.step === "tour" && state.trying) {
-    // The demo's keys first (esc closes a detail pane it opened); else esc
-    // or enter gives it back.
     const next = tryKey(state.demo, state.trying, key, demoWorld(data.state.categories))
     if (next) { ui.setState("welcome", "trying", next); return }
     if (name === "escape" || name === "return" || name === "enter") showDemo(ui, state.demo)
@@ -162,13 +130,11 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     return
   }
   if (state.busy) return
-  // The tour: ← and → between its demos; t to try one.
   if (state.step === "tour" && (name === "left" || name === "right" || name === "h" || name === "l")) {
     showDemo(ui, state.demo + (name === "left" || name === "h" ? -1 : 1))
     return
   }
   if (state.step === "tour" && name === "t") { startTry(ui, data); return }
-  // b tries the next backdrop (not while typing a token, or trying a demo).
   if (name === "b" && !typing && !state.trying) {
     const at = BACKDROPS.findIndex((b) => b.id === welcomeBackdrop(state, data.state.uiPrefs.backdrop))
     ui.setState("welcome", { backdrop: BACKDROPS[(at + 1) % BACKDROPS.length]!.id })
@@ -176,14 +142,12 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   }
   if (name === "up" || (!typing && name === "k") || (key.shift && name === "tab")) { ui.setState("welcome", { cursor: Math.max(0, state.cursor - 1) }); return }
   if (name === "down" || (!typing && name === "j") || name === "tab") { ui.setState("welcome", { cursor: Math.min(rows.length - 1, state.cursor + 1) }); return }
-  // Space switches an Up account too, as enter does.
   if (name === "space" && !typing) {
     const row = rows[Math.min(state.cursor, rows.length - 1)]
     if (row?.account) welcomeAct(ui, data, "account", row)
     return
   }
   if (name === "return" || name === "enter") {
-    // Typing a token, enter checks it wherever the cursor is.
     const row = typing && state.token.value.trim() ? rows.find((r) => r.action === "token")! : rows[Math.min(state.cursor, rows.length - 1)]
     if (row) welcomeAct(ui, data, row.action, row)
     return
@@ -192,7 +156,6 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
     if (key.ctrl && name === "o") { welcomeAct(ui, data, "openUp"); return }
     if (key.ctrl && name === "n") { welcomeAct(ui, data, "next"); return }
     if (isPrintable(key) || name === "backspace" || name === "delete" || name === "left" || name === "right" || name === "home" || name === "end" || (key.ctrl && (name === "u" || name === "w" || name === "a" || name === "e"))) {
-      // Edits apply at the end: the token is never shown, so there's no caret to place.
       const next = editText({ value: state.token.value, caret: state.token.value.length }, key)
       if (next) ui.setState("welcome", { token: next, cursor: 0, note: null })
     }
@@ -201,7 +164,6 @@ export function handleWelcome(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   if (name === "s" && state.step !== "done") { go(ui, nextStep(state.step), data); return }
 }
 
-/** Do a row's action (enter on it, or a click). */
 export function welcomeAct(ui: UiStore, data: DataStore, action: WelcomeAction, row?: WelcomeRow): void {
   const state = ui.state.welcome
   if (!state || state.busy) return
@@ -220,8 +182,6 @@ export function welcomeAct(ui: UiStore, data: DataStore, action: WelcomeAction, 
       return
     case "replaceToken": ui.setState("welcome", { token: { value: "", caret: 0 }, upAccounts: null, upSyncedOff: undefined, cursor: 0, note: null }); return
     case "token": void checkUpToken(ui, data); return
-    // Every model opens its own dialog, as in Settings › AI models: a
-    // browser sign-in, a key (paste it straight away), and how it's going.
     case "openrouter": case "openai": ui.setState({ aiDialog: aiDialogFor(action) }); return
     case "jevKey": ui.setState({ aiDialog: aiDialogFor("jev") }); return
     case "clairic": ui.setState({ aiDialog: aiDialogFor("workersAi") }); return
@@ -233,8 +193,6 @@ export function welcomeAct(ui: UiStore, data: DataStore, action: WelcomeAction, 
   }
 }
 
-/** Ask Up with the token as typed; only a token Up answers is saved. Then
- * the first sync starts, while the rest of the setup goes on. */
 async function checkUpToken(ui: UiStore, data: DataStore): Promise<void> {
   const token = ui.state.welcome?.token.value.trim() ?? ""
   if (!token) { ui.setState("welcome", { note: { text: "Paste your token first (ctrl+v or your terminal's paste)", ok: false } }); return }
@@ -243,8 +201,6 @@ async function checkUpToken(ui: UiStore, data: DataStore): Promise<void> {
   try {
     const accounts = await sources.upAccounts(token)
     await data.saveApiKeys({ JASKMONEY_UP_TOKEN: token })
-    // The first sync waits for Continue: which accounts sync is chosen first.
-    // The cursor on Continue (after the accounts): enter keeps them all.
     opened.patch({ busy: null, upAccounts: accounts, token: { value: "", caret: 0 }, cursor: accounts.length, note: null })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -252,7 +208,6 @@ async function checkUpToken(ui: UiStore, data: DataStore): Promise<void> {
     opened.patch({ busy: null, note: { text: `Up didn't accept it: ${message.replaceAll(token, "[token]")}.${hint}`, ok: false } })
   }
 }
-
 
 let emailFlow: AbortController | null = null
 
@@ -263,12 +218,6 @@ const BUSY: Partial<Record<EmailPhase, string>> = {
   check: "Asking Gmail for your order emails…",
 }
 
-/**
- * Connect Gmail through Executor, each step only if it's needed: sign in
- * (or make an account) in the browser; add Executor's Gmail app; open
- * Google's approval and wait for the account to link; count the order
- * emails. esc stops waiting. A step Executor pauses for approval says so.
- */
 async function connectEmail(ui: UiStore, data: DataStore): Promise<void> {
   if (emailFlow) return
   const flow = new AbortController()

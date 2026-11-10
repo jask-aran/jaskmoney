@@ -7,7 +7,6 @@ import { key } from "../testing/keys"
 import { assignableCategories, pickerSuggestions } from "../domain/categoryOptions"
 import { testEnv } from "../testing/scoped"
 
-/** Data with no Jev and no network: suggestions come from history. */
 function setup() {
   testEnv("JASKMONEY_JEV_TOKEN", "")
   const network = spyOn(globalThis, "fetch").mockImplementation(Object.assign(() => { throw new Error("network is forbidden") }, { preconnect: globalThis.fetch.preconnect }))
@@ -45,29 +44,23 @@ test("i shows only rows to categorise, most confident first; y accepts, x dismis
   expect(data.state.uncategorisedOnly).toBe(true)
   expect(data.state.sortColumn).toBe("confidence")
   await settle()
-  // History: four earlier Shops, all Test food, settle both uncategorised Shops (4/5 = 80%).
   expect(Object.values(data.state.suggestions).map((s) => [s.transactionId, s.categoryId, s.confidence]).sort()).toEqual([[2, 100, 0.8], [4, 100, 0.8]])
-  // Suggested rows first (ties newest first), the unsuggested last.
   expect(shown()).toEqual(["Shop4", "Shop2", "Mystery3"])
   expect(footerHints("manager.txns", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4, 7, 8], uncategorisedOnly: true }).map((h) => h.key)).toContain("Y")
 
-  // c opens the picker with the suggestion first.
   handleKey(ui, key("c"), data)
   expect(assignableCategories(data.state.categories, "", pickerSuggestions(ui.state.pickerTargets, data.state.suggestions))[0]?.name).toBe("Test food")
   handleKey(ui, key("escape"), data)
 
-  // y on the cursor row (Shop4) accepts its suggestion; the row leaves the view.
   handleKey(ui, key("y"), data)
   await settle()
   expect(data.transactions().find((t) => t.id === 4)?.categoryName).toBe("Test food")
   expect(shown()).toEqual(["Shop2", "Mystery3"])
 
-  // x on a row without a suggestion says so; nothing changes.
   handleKey(ui, key("j"), data)
   handleKey(ui, key("x"), data); await settlePending()
   expect(ui.state.status).toBe("No suggestion to dismiss")
 
-  // Y shows what it would accept; esc accepts nothing, enter accepts Shop2.
   handleKey(ui, key("y", { shift: true, sequence: "Y" }), data)
   expect(ui.state.acceptPreview).toEqual([2])
   expect(ui.activeScope()).toBe("manager.acceptPreview")
@@ -81,7 +74,6 @@ test("i shows only rows to categorise, most confident first; y accepts, x dismis
   handleKey(ui, key("y", { shift: true, sequence: "Y" }), data)
   expect(ui.state.acceptPreview).toBeNull()
 
-  // Leaving the view goes back to date order.
   handleKey(ui, key("i"), data)
   expect(data.state.uncategorisedOnly).toBe(false)
   expect(data.state.sortColumn).toBe("date")
@@ -95,7 +87,6 @@ test("x dismisses the selected rows' suggestions without categorising them", asy
   ui.setState({ selectedIds: { 2: true, 4: true } })
   handleKey(ui, key("x"), data); await settlePending()
   expect(data.state.suggestions).toEqual({})
-  // Dismissed rows (no suggestion now) drop below those with one; here none has.
   expect(shown()).toEqual(["Shop4", "Mystery3", "Shop2"])
   expect(ui.state.selectedIds).toEqual({})
 })

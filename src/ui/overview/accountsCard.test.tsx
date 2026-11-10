@@ -7,7 +7,6 @@ import { account, transaction } from "../../testing/fixtures"
 
 afterEach(() => setAppClock(null))
 
-/** The Accounts card's rows (inside its border), and the frame's spans. */
 async function accounts(height: number, savers: boolean) {
   setAppClock(new Date(2026, 9, 20, 12))
   const t = await renderApp({ width: 160, height })
@@ -36,18 +35,14 @@ async function accounts(height: number, savers: boolean) {
 
 test("Accounts: a ledger, available first, the balance with what's pending, then each saver with its 30 days' change, their total and the net position", async () => {
   const { rows } = await accounts(45, true)
-  // Balance less pending is available: $1,246.50 − $96.94, 2 held.
   expect(rows[0]).toMatch(/Available\s+\$1,149\.56$/)
   expect(rows[1]).toMatch(/Balance\s+\$97 pending · 2\s+\$1,246\.50$/)
-  // The savers set apart, under their heading, change then balance.
   expect(rows[2]).toBe("")
   expect(rows[3]).toMatch(/Savers\s+30 days$/)
   expect(rows[4]).toMatch(/Holiday\s+\$0\s+\$3,400$/)
   expect(rows[6]).toMatch(/Total\s+\$0\s+\$8,400$/)
   expect(rows[7]).toBe("")
-  // The net position last, its 30 days' change beside it.
   expect(rows.at(-1)).toMatch(/Net position\s+[+-]?\$[\d,]+\s+\$9,549\.56$/)
-  // The changes in one column.
   const column = (r: string) => r.search(/\S+\s+\S+$/) + r.match(/(\S+)\s+\S+$/)![1]!.length
   expect(new Set([rows[4]!, rows[6]!, rows.at(-1)!].map(column)).size).toBe(1)
 })

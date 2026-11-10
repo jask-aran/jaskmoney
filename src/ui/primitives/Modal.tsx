@@ -7,12 +7,6 @@ import { fitSpans, spansWidth, type Span } from "./spans"
 
 const TONE = { get accent() { return tone.key }, get error() { return tone.bad }, get warning() { return tone.caution }, get focus() { return tone.focus } }
 
-/**
- * The app's one overlay: a centred, bordered panel
- * over the tab with its title centred in the top border (bold, with an
- * optional muted subtitle), the body, then a muted hint line. `tone` colours
- * the border and title: "error" for confirmations that destroy data.
- */
 export function Modal(props: {
   title: string
   subtitle?: string
@@ -24,7 +18,6 @@ export function Modal(props: {
   const dims = useTerminalDimensions()
   const color = () => TONE[props.tone ?? "accent"]
   const width = () => Math.max(20, Math.min(props.width ?? 64, dims().width - 4))
-  // Centred from the panel's known width.
   const title = () =>
     fitSpans(
       [

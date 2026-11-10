@@ -1,34 +1,17 @@
 import { ASK_DEFAULT_DAYS } from "./ask"
 
-/**
- * JQL (Jask Query Language), described once, from a reading of the parser
- * (domain/filter): F1 in the search bar shows the brief version, `m` there
- * and the rule writer's guide (aiHistory FILTER_GUIDE) the full one, so
- * the two can't drift. What only the search bar has (top:, ask:, ?words,
- * what it forgives, names found by bare words, the fallback) is marked: a
- * rule's guide leaves it out, so the model writes the full form.
- * filterLanguage.test checks every example parses, each forgiven input
- * reads as it says, and each gotcha's wrong input really reads differently
- * from its fix.
- */
-
 export interface Row {
   write: string
   means: string
-  /** In the brief version too. */
   brief?: boolean
-  /** Only the search bar has it: not in a rule's guide. */
   searchOnly?: boolean
-  /** Only in the search bar's version (a rule's says it differently). */
   ruleOnly?: boolean
-  /** What it reads as, in JQL (forgiven input). */
   reads?: string
 }
 
-/** A mistake as people make it, what's wrong, and the input that works. */
 interface Gotcha extends Row { fix: string }
 
-export type Block =
+type Block =
   | { kind: "text"; text: string; searchOnly?: boolean }
   | { kind: "code"; lines: string[] }
   | { kind: "rows"; rows: Row[] }
@@ -36,16 +19,13 @@ export type Block =
 
 export interface Section {
   title: string
-  /** Said beside the title. */
   aside?: string
-  /** In the brief version (its brief rows). */
   brief?: boolean
   blocks: Block[]
 }
 
 export const JQL_SUMMARY = "A search is a list of terms. A space between terms means AND, OR means either, NOT leaves out, and brackets group."
 
-/** The example under the summary, and what it finds. */
 export const JQL_EXAMPLE = { write: "(kfc OR mcdonalds) date:2026-10 amt:<-10", means: "KFC or McDonald's, in October, over $10 spent" }
 
 export const JQL: Section[] = [
@@ -179,11 +159,8 @@ export const JQL: Section[] = [
   },
 ]
 
-/** What a version keeps: the search bar's has everything but the rule-only
- * wording; a rule's leaves out what only the search bar has. */
 export const keeps = (forRules: boolean) => (x: { searchOnly?: boolean; ruleOnly?: boolean }) => (forRules ? !x.searchOnly : !x.ruleOnly)
 
-/** The full language as text, for the rule writer (what a rule can use): every section, in order. */
 export function filterGuide(): string {
   const keep = keeps(true)
   const out = [JQL_SUMMARY, `Example: ${JQL_EXAMPLE.write}  (${JQL_EXAMPLE.means})`]

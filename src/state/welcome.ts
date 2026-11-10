@@ -3,59 +3,26 @@ import { DEMO_COUNT, triable, type DemoTry } from "./tour"
 import { DEFAULT_BACKDROP, type BackdropId } from "../ui/welcome/backdrop"
 import type { Ticker } from "../app/tickers"
 
-/**
- * The first-run setup: a full-screen walk through connecting Up, the AI
- * models and your email (through Executor), any of it skippable. Pure:
- * the steps, each step's rows, and the email checklist, from the state
- * and what's connected. The effects are app/welcome; the screens
- * ui/welcome.
- *
- * Its own state machine, one modal (uiStore MODALS "welcome"):
- *
- *   hello → tour → up → ai → email → done → (closed)
- *
- * hello says what this is. The tour is the app's own pieces playing on
- * demo mode's made-up years (ui/welcome/Demos), ←/→ between them; enter
- * goes to the next, and from the last on to Up. Either can skip to Up.
- * Try it (t) freezes the demo where it is and hands you its keys (tour).
- *
- * enter on a row does it; "Continue" (or skip, s) goes on; esc goes back a
- * step (on hello it closes, as skipping does). Leaving any way marks the
- * setup as seen (core welcomed): it doesn't open by itself again.
- */
 type WelcomeStep = "hello" | "tour" | "up" | "ai" | "email" | "done"
 export const WELCOME_STEPS: readonly WelcomeStep[] = ["hello", "tour", "up", "ai", "email", "done"]
 export const STEP_NAMES: Record<WelcomeStep, string> = { hello: "Welcome", tour: "Tour", up: "Up Bank", ai: "AI", email: "Email", done: "Ready" }
 
-/** Where connecting your email through Executor has got to. */
 export type EmailPhase = "idle" | "signIn" | "install" | "approve" | "check" | "done" | "failed"
 
 export interface WelcomeState {
   step: WelcomeStep
-  /** Which way the last move went (the next screen slides in from there). */
   dir: 1 | -1
-  /** Counts screens shown: each new one starts its entrance again. */
   shown: number
-  /** The tour's demo shown, and when it started (performance.now(): its
-   * script runs from there). */
   demo: number
   demoAt: number
-  /** Trying the demo yourself: its state, frozen from the script. */
   trying: DemoTry | null
-  /** The welcome page's backdrop, as b last chose it (else Settings'). */
   backdrop?: BackdropId
-  /** Real market prices for the ticker tape, once fetched (app/tickers). */
   tickers?: Ticker[]
   cursor: number
-  /** The Up token as typed: never drawn, only dots. */
   token: TextField
-  /** Something running (a check, a sign-in): its words, with a spinner. */
   busy: string | null
   note: { text: string; ok: boolean | null } | null
-  /** Up answered this token: its accounts, each to sync or not. */
   upAccounts: UpChoice[] | null
-  /** The choice the last sync from this step had (the switched-off ids), so
-   * leaving again unchanged doesn't sync again. */
   upSyncedOff?: string
   email: { phase: EmailPhase; failedAt: EmailPhase | null; url: string | null; account: string | null; orders: number | null }
 }
@@ -67,7 +34,6 @@ export function welcomeStart(): WelcomeState {
   }
 }
 
-/** Move to `step`: a fresh screen (cursor at its top, no note). */
 export function welcomeGo(state: WelcomeState, step: WelcomeStep): Partial<WelcomeState> {
   const from = WELCOME_STEPS.indexOf(state.step), to = WELCOME_STEPS.indexOf(step)
   return { step, dir: to >= from ? 1 : -1, shown: state.shown + 1, cursor: 0, note: null, busy: null, trying: null }
@@ -76,12 +42,10 @@ export function welcomeGo(state: WelcomeState, step: WelcomeStep): Partial<Welco
 export const nextStep = (step: WelcomeStep): WelcomeStep | null => WELCOME_STEPS[WELCOME_STEPS.indexOf(step) + 1] ?? null
 export const previousStep = (step: WelcomeStep): WelcomeStep | null => WELCOME_STEPS[WELCOME_STEPS.indexOf(step) - 1] ?? null
 
-/** What's connected now, as the screens need it. */
 export interface WelcomeContext {
   up: boolean
   openrouter: boolean
   openai: boolean
-  /** Jev reachable (its own key, or through OpenRouter). */
   jev: boolean
   jevKey: boolean
   clairic: boolean
@@ -98,32 +62,16 @@ export type WelcomeAction =
 export interface WelcomeRow {
   action: WelcomeAction
   label: string
-  /** Beside the label: how it stands (connected, optional, …). */
   detail?: string
-  /** It's done: drawn with a tick. */
   done?: boolean
-  /** The one to press: drawn as the screen's main button. */
   primary?: boolean
-  /** An Up account's row: its id (Up's), toggled by enter or space, and
-   * whether it syncs (a green dot) or not (a grey one, the row faint). */
   account?: string
   syncs?: boolean
-  /** A blank line above it (Continue, after the accounts). */
   gapBefore?: boolean
 }
 
-/** An Up account in the setup's choice: Up's id, name, type (TRANSACTIONAL,
- * SAVER, …) and ownership (INDIVIDUAL, JOINT), and whether it syncs. */
 export interface UpChoice { id: string; name: string; type: string; ownership: string; on: boolean }
 
-/**
- * Up's accounts as the app sees them: each spending account, with the
- * savers of the same ownership under it (yours under Spending, joint ones
- * under 2Up Spending): a saver is part of its spending account, not an
- * account of its own. A saver with no spending account to go under comes
- * last, on its own. In order, with each one's spending account (null for
- * a spending account itself).
- */
 function upAccountTree(accounts: UpChoice[]): Array<{ account: UpChoice; under: UpChoice | null }> {
   const heads = accounts.filter((a) => a.type !== "SAVER")
   const headOf = (saver: UpChoice) => heads.find((h) => h.ownership === saver.ownership) ?? null
@@ -134,8 +82,6 @@ function upAccountTree(accounts: UpChoice[]): Array<{ account: UpChoice; under: 
   ]
 }
 
-/** Toggle one account: a spending account takes its savers with it; a
- * saver turned on brings its spending account on (it's part of it). */
 export function toggleUpAccount(accounts: UpChoice[], id: string): UpChoice[] {
   const tree = upAccountTree(accounts)
   const at = tree.find((t) => t.account.id === id)
@@ -145,7 +91,6 @@ export function toggleUpAccount(accounts: UpChoice[], id: string): UpChoice[] {
   return accounts.map((a) => a.id === id || savers.has(a.id) ? { ...a, on } : on && a.id === at.under?.id ? { ...a, on: true } : a)
 }
 
-/** The rows of the screen, top to bottom; the cursor moves over them. */
 export function welcomeRows(state: WelcomeState, ctx: WelcomeContext): WelcomeRow[] {
   switch (state.step) {
     case "hello":
@@ -166,7 +111,6 @@ export function welcomeRows(state: WelcomeState, ctx: WelcomeContext): WelcomeRo
     }
     case "up":
       if (ctx.up && state.token.value === "") return [
-        // Which accounts sync: each spending account, its savers under it.
         ...upAccountTree(state.upAccounts ?? []).map(({ account, under }): WelcomeRow => ({
           action: "account", account: account.id, syncs: account.on,
           label: `${under ? "  " : ""}${account.name}`,
@@ -182,7 +126,6 @@ export function welcomeRows(state: WelcomeState, ctx: WelcomeContext): WelcomeRo
       ]
     case "ai":
       return [
-        // By provider: what each one enables.
         { action: "clairic", label: "Cloudflare", detail: ctx.clairic ? "connected · Clairic" : "Clairic: smart search's words and dates", done: ctx.clairic },
         { action: "jevKey", label: "TypeSafe", detail: ctx.jevKey ? "saved · Jev" : "Jev: suggestions, smart search, ask:", done: ctx.jevKey },
         { action: "openai", label: "ChatGPT", detail: ctx.openai ? "connected · rules" : "a general model for rules, on your plan", done: ctx.openai },
@@ -202,8 +145,6 @@ export function welcomeRows(state: WelcomeState, ctx: WelcomeContext): WelcomeRo
   }
 }
 
-/** Each step's mark on the rail: a step whose integration is connected is
- * done; one passed without connecting it is skipped. */
 export function stepMark(step: WelcomeStep, state: WelcomeState, ctx: WelcomeContext): "done" | "skipped" | "current" | "ahead" {
   const at = WELCOME_STEPS.indexOf(state.step), i = WELCOME_STEPS.indexOf(step)
   if (i === at) return "current"
@@ -212,7 +153,6 @@ export function stepMark(step: WelcomeStep, state: WelcomeState, ctx: WelcomeCon
   return connected ? "done" : "skipped"
 }
 
-/** The email checklist: each step's words and how it stands. */
 export type ItemState = "todo" | "active" | "done" | "failed"
 
 const EMAIL_ORDER: EmailPhase[] = ["signIn", "install", "approve", "check"]
@@ -235,20 +175,14 @@ export function emailChecklist(state: WelcomeState, ctx: WelcomeContext): { labe
   ]
 }
 
-/** The setup's backdrop: tried with b, else Settings › Appearance's, else the default. */
 export function welcomeBackdrop(state: Pick<WelcomeState, "backdrop">, chosen: BackdropId | undefined): BackdropId {
   return state.backdrop ?? chosen ?? DEFAULT_BACKDROP
 }
 
-/** The status line while the setup is open, in place of the status log's
- * latest (which goes on being written, and shows again once it closes):
- * the setup's own cards say how each step went. */
 export function welcomeStatus(state: Pick<WelcomeState, "backdrop" | "tickers">, chosen: BackdropId | undefined): string {
   return welcomeBackdrop(state, chosen) === "ticker" && state.tickers?.length ? "These are real live tickers" : "Welcome to jaskmoney"
 }
 
-/** "up:yeah:…" → "••••••••": that a token is there, never any of it (not
- * even its last few characters). */
 export function tokenShown(value: string): string {
   return "•".repeat(Math.min(24, value.length))
 }

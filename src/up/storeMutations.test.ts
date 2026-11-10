@@ -25,7 +25,6 @@ test("category pushes deduplicate provider and local IDs", async () => {
     expect(data.state.transactions.every(t => t.categoryId === category.id)).toBe(true)
     const fallback = data.state.categories.find(c => c.isDefault)!.id
     const pending = data.categorizeTransactions([local, local], fallback)
-    // Local-only edits refresh synchronously; the picker reads state immediately.
     expect(data.state.transactions.find(t => t.id === local)?.categoryId).toBe(fallback)
     await pending
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -79,7 +78,6 @@ test("a slow Up answer to an older choice never undoes a newer one; undo follows
     data.refresh()
     const food = data.state.categories.find((c) => c.extId === "food")!.id
     const fuel = data.state.categories.find((c) => c.extId === "fuel")!.id
-    // The first push (Food) hangs, then Up refuses it; the second (Fuel) is accepted at once.
     let refuseFirst!: () => void
     let calls = 0
     fetchMock.mockImplementation(Object.assign(async () => {
@@ -97,7 +95,6 @@ test("a slow Up answer to an older choice never undoes a newer one; undo follows
     const now = db.query("SELECT category_id AS categoryId, category_source AS source FROM transactions WHERE id = ?").get(row) as { categoryId: number; source: string }
     expect(now).toEqual({ categoryId: fuel, source: "provider" })
     expect(data.state.transactions.find((t) => t.id === row)!.categoryId).toBe(fuel)
-    // The latest choice is what undo undoes first.
     expect(data.undoLabel()).toContain("Fuel")
   } finally {
     fetchMock.mockRestore()

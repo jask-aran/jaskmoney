@@ -13,8 +13,6 @@ afterEach(() => setAppClock(null))
 const WIDTH = 160
 const SIDE = 56
 
-/** The Overview at 160 wide, the side column's lines, with the range's
- * pay, a send to savers and spending (and before it, to compare). */
 async function overview(rows: ReturnType<typeof transaction>[], lookback: "1M" | "1Y") {
   setAppClock(new Date(2026, 9, 20, 12))
   const t = await renderApp({ width: WIDTH, height: 60 })
@@ -39,7 +37,6 @@ const send = (dateISO: string, amount: number) => row(dateISO, -amount, { transf
 const spend = (dateISO: string, amount: number, categoryId: number, categoryName: string) => row(dateISO, -amount, { categoryId, categoryName, description: categoryName.toUpperCase() })
 
 test("the Range pane: the range as a track, what came in as a bar (spent, net), the net opened out to where it went, the ratios, and the categories under their bar against before; s opens out the spending instead, t lays it out as text, each and back", async () => {
-  // 1M on 20 Oct: 20 Sep to 20 Oct; before it, the month before.
   const { t, frame } = await overview([
     spend("2026-08-01", 5, 10, "Groceries"),
     spend("2026-09-01", 400, 10, "Groceries"), spend("2026-09-02", 200, 11, "Fuel"),
@@ -50,44 +47,27 @@ test("the Range pane: the range as a track, what came in as a bar (spent, net), 
   const text = f.join("\n")
   expect(text).toContain("╭─ Range")
   expect(text).not.toContain("Totals")
-  // The track: the ends, today; what came in and went to savers over it
-  // (what's spent is the bar's). Ending today, the end is its own label.
   expect(text).toMatch(/↓ \$5,000 in\s+◆ \$1,000 savers\s*│[\s\S]*●[━◆●┿┄]+○[\s\S]*20 Sep\s+2 Oct\s+20 Oct/)
-  // What came in: spent in spending's colour, the net in good, each
-  // figure over its part.
   const barAt = f.findIndex((l) => /\$400 spent\s+\+\$4,600 net/.test(l)) + 1
   expect(barAt).toBeGreaterThan(0)
   const colorsOf = (row: number) => t.captureSpans().lines[row]!.spans.filter((s) => s.text.includes("█")).map((s) => s.fg.toInts().join())
   expect(colorsOf(barAt)[0]).toBe(RGBA.fromHex(INKS.spend!).toInts().join())
   expect(colorsOf(barAt).at(-1)).toBe(RGBA.fromHex(tone.good).toInts().join())
-  // Its net end opened out under it, the savings rate in the opening; then
-  // where the net went: Rainy day's $1,000, and $3,600 kept in Spending.
   expect(f[barAt + 1]).toMatch(/╭─+╯\s+92\.0% saved\s+│/)
   expect(f[barAt + 3]).toMatch(/\$1,000 Rainy day\s+\$3,600 kept/)
-  // No Savings rate row: the opening says it.
   expect(text).not.toContain("Savings rate")
   expect(text).toMatch(/Daily average\s+before \$\d+\s+\$\d+/)
   expect(text).toMatch(/Transactions\s+before 2\s+\d+/)
-  // Runway: the net position ($10,500) at the range's daily average
-  // ($400 over 31 days, $13).
   expect(text).toMatch(/Runway\s+at \$13\/day\s+814 days/)
-  // The categories: a heading over the columns, straight over the rows
-  // (their bar is the spending view's), each group's change on before.
   expect(text).toMatch(/Categories\s+Spent\s+%\s+Before[^\n]*\n[^\n]*Groceries/)
   expect(text).not.toMatch(/┃|before \$600/)
   expect(text).toMatch(/Groceries\s+\$300\s+75%\s+-\$100/)
   expect(text).toMatch(/Fuel\s+\$100\s+25%\s+-\$100/)
-  // The ratios first, then the track, then the bar.
   expect(text).toMatch(/╭─ Range[^\n]*\n[^\n]*Daily average[^\n]*\n[^\n]*Transactions[^\n]*\n[^\n]*Runway[\s\S]*↓ \$5,000 in[\s\S]*\$400 spent/)
-  // s and t are the Range pane's, with it focused.
   ui.setState({ focusedSection: "ov.categories" })
-  // s: where the spending went, saved. The spent part opened out (the
-  // left edge down, a corner where the spending ends) to the categories'
-  // bar in the savers' place, the groups named under it; no net bar.
   t.mockInput.pressKey("s")
   f = await frame()
   expect(data.state.uiPrefs.rangeView).toBe("spending")
-  // (Its share of what came in, 8%, too wide for its 4 cells here.)
   const opening = f.findIndex((l) => /│\s+(\S+% spent\s+)?╰─+╮/.test(l))
   expect(opening).toBeGreaterThan(0)
   expect(f[opening + 1]).toMatch(/│  █+ │/)
@@ -96,9 +76,6 @@ test("the Range pane: the range as a track, what came in as a bar (spent, net), 
   t.mockInput.pressKey("s")
   f = await frame()
   expect(data.state.uiPrefs.rangeView).toBe("net")
-  // t: the Range pane as text, saved: the totals against before line by
-  // line (the range's under Spent, before's under Before), Runway, then
-  // the categories; no bars. The column and Accounts are as they were.
   t.mockInput.pressKey("t")
   f = await frame()
   const text2 = f.join("\n")
@@ -131,9 +108,7 @@ test("the Range pane over a year: a fortnight's paydays and sends would crowd th
   const text = (await frame()).join("\n")
   const track = text.split("\n").find((l) => /●[━┿┄]/.test(l))!
   expect(track).toBeDefined()
-  // Only the ends and today: no paydays or sends between.
   expect(track.match(/[●◆]/g)).toEqual(["●"])
-  // Its ends' years; the figures (short of their words where they'd crowd).
   expect(text).toMatch(/20 Oct 2025\s+20 Oct 2026/)
   expect(text).toMatch(/↓ \$52,000 in\s+◆ \$13,000 savers/)
   expect(text).toMatch(/\$26,000 spent\s+\+\$26,000 net/)
@@ -141,8 +116,6 @@ test("the Range pane over a year: a fortnight's paydays and sends would crowd th
 })
 
 test("the Range pane spending more than came in: where it came from (in, each saver drawn on, Spending's balance) over what was spent, the same total, edges between", async () => {
-  // In $1,000; spent $1,600: $400 from Rainy day, the other $200 from
-  // Spending's balance.
   const withdraw = (dateISO: string, amount: number) => [
     row(dateISO, amount, { transferAccountId: 2, internal: true, excluded: true, description: "Transfer from Rainy day" }),
     transaction({ id: ++id, accountId: 2, dateISO, amount: -amount, transferAccountId: 1, internal: true, excluded: true, description: "Transfer to Spending" }),
@@ -154,17 +127,13 @@ test("the Range pane spending more than came in: where it came from (in, each sa
   const f = await frame()
   const at = f.findIndex((l) => /\$1,000 in/.test(l) && !l.includes("↓"))
   expect(at).toBeGreaterThan(0)
-  // Each source's figure; the smaller ones' names where they fit.
   expect(f[at]).toMatch(/\$1,000 in\s+\$400( Rainy day)?\s+\$200( Spending)?/)
-  // The two bars, edges between them, the same width; the hatching under
-  // what the savers and Spending paid.
   const inside = (l: string) => l.slice(3, l.lastIndexOf("│") - 1)
   expect(inside(f[at + 1]!)).toMatch(/^█+$/)
   expect(inside(f[at + 2]!)).toMatch(/^│ +│$/)
   expect(inside(f[at + 3]!)).toMatch(/^█+╱+$/)
   expect(inside(f[at + 3]!).indexOf("╱")).toBe(Math.round((1000 / 1600) * inside(f[at + 1]!).length))
   expect(f[at + 4]).toMatch(/\$1,600 spent\s+-\$600 net/)
-  // No opening and no net bar: there's no net to open out.
   expect(f.join("\n")).not.toMatch(/╭─+╯/)
   t.renderer.destroy()
 })
@@ -174,10 +143,8 @@ test("spending more than came in, where the spending went: its categories as a t
   data.setState("uiPrefs", { ...data.state.uiPrefs, rangeView: "spending" })
   const f = await frame()
   const inside = (l: string) => l.slice(3, l.lastIndexOf("│") - 1)
-  // The spent bar plain: spending's colour, then hatched.
   const spentAt = f.findIndex((l) => /^█+╱+$/.test(inside(l)))
   expect(spentAt).toBeGreaterThan(0)
-  // Under it, the figures inside the edges; then the categories' bar, as wide.
   expect(inside(f[spentAt + 1]!)).toMatch(/^│ .*\$1,600 spent\s+-\$600 net.* │$/)
   expect(inside(f[spentAt + 2]!)).toMatch(/^█+$/)
   const spans = t.captureSpans().lines[spentAt + 2]!.spans
@@ -185,17 +152,12 @@ test("spending more than came in, where the spending went: its categories as a t
   expect(spans.some((s) => s.text.includes("█") && s.fg.toInts().join() === groceries)).toBe(true)
   expect(spans.some((s) => s.text.includes("█") && s.fg.toInts().join() === fuel)).toBe(true)
   expect(t.captureSpans().lines[spentAt]!.spans.some((s) => s.text.includes("╱") && s.fg.toInts().join() === fuel)).toBe(false)
-  // The largest groups named under it; no bar of their own over the
-  // categories.
   expect(f[spentAt + 3]).toMatch(/\$1,200 Groceries\s+\$400 Fuel/)
   expect(f.join("\n")).toMatch(/Categories\s+Spent\s+%\s+Before[^\n]*\n[^\n]*Groceries/)
   t.renderer.destroy()
 })
 
 test("spending more than came in, paid for by money from outside (transfers in, not income): a measured part of its own, nothing guessed as Spending's balance", async () => {
-  // In $1,000, spent $1,600; $2,000 arrived from another bank: the $600
-  // past what came in was paid by it (its share), and Spending's balance
-  // rose, so it gave nothing.
   const { t, frame } = await overview([
     pay("2026-10-01", 1000), row("2026-10-02", 2000, { excluded: true, categoryName: "Transfers", description: "FROM OTHER BANK" }),
     spend("2026-10-05", 1200, 10, "Groceries"), spend("2026-10-06", 400, 11, "Fuel"),
@@ -214,7 +176,6 @@ test("the Range pane draws in with the charts, as the Budgets pane does: its bar
   const bars = (f: string[]) => f.join("").split("█").length - 1
   const whole = bars(await frame())
   expect(whole).toBeGreaterThan(0)
-  // "always": the setting's change is a new key, and the draw-in starts.
   data.setState({ uiPrefs: { chartMotion: "always", chartSpeed: "juicy" } })
   const early = await frame()
   expect(bars(early)).toBeLessThan(whole)

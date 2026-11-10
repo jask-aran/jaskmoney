@@ -35,7 +35,6 @@ test("filter parser: bare words, fields with implicit AND, tag and type, OR and 
   expect(parseFilterStrict("cat:A OR cat:B AND amt:>0").error).toBeTruthy()
 })
 
-// Approved change: impossible days must fail rather than overflow into March.
 test("filter dates reject impossible days in single values and range endpoints", () => {
   for (const query of ["date:2026-02-31", "date:2026-02-31..2026-03-05", "date:2026-02-01..2026-02-31", "date:2025-02-29", "date:2026-13-01"]) {
     for (const parse of [parseFilter, parseFilterStrict]) {
@@ -51,7 +50,6 @@ test("type:spending and type:income follow the money rules while debit and credi
   const spending = parseFilterStrict("type:spending")
   expect(spending.error).toBeUndefined()
   expect(evalFilter(spending.node, base)).toBe(true)
-  // A refund into a spending category counts against it.
   expect(evalFilter(spending.node, { ...base, amount: 10 })).toBe(true)
   const uncategorisedIn = { ...base, amount: 10, categoryId: null, categoryName: "Uncategorised" }
   for (const row of [{ ...base, excluded: true }, { ...base, tagNames: ["iGnOrE"] }, { ...base, amount: 0 }, uncategorisedIn, { ...base, income: true }]) {
@@ -75,7 +73,6 @@ describe("text matching ignores case, spacing and punctuation (approved deviatio
     for (const q of ["desc:mcdonalds", 'desc:"Mc Donalds"', "desc:mcdonald's", "mcdonalds"]) expect(matches(q, "McDonald's")).toBe(true)
     expect(matches("desc:ubertrip", "UBER *TRIP Sydney")).toBe(true)
     expect(matches("note:kestrelram", "Corner Bar", "Kestrel RAM!")).toBe(true)
-    // Everything legacy matched still matches.
     expect(matches('desc:"coffee shop"', "The Coffee Shop")).toBe(true)
   })
 })

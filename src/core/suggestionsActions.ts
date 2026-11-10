@@ -6,14 +6,10 @@ import { operationSummary } from "./upPush"
 import type { CoreContext } from "./context"
 import type { createSuggestions } from "./suggestions"
 
-/** The suggestion actions that don't take a round's turn: ask:, accept, dismiss. */
 export function createSuggestionActions(ctx: CoreContext, deps: Parameters<typeof createSuggestions>[1]) {
   const { state, mutate, refresh, transactions, recordUndo, categorySnapshot, restoreCategories } = ctx
   const { applyCategories, ruleOfferNote } = deps
 
-  /** Have Jev judge `ids` (in that order) for an `ask:` term, `onJudged`
-   * hearing each batch's scores; stops sending once `active` says no. The
-   * client chose the rows (domain/ask askCandidates) and keeps the verdicts. */
   async function judgeAsk(words: string, ids: number[], ai: Pick<JevClient, "judge"> | undefined, options: {
     onJudged: (scores: Array<[number, number]>) => void; active: () => boolean
   }): Promise<string[]> {
@@ -32,9 +28,6 @@ export function createSuggestionActions(ctx: CoreContext, deps: Parameters<typeo
     return failures
   }
 
-  /** Categorise the rows among `ids` that have a suggestion as suggested,
-   * all at once (see applyCategories), then clear the suggestions that
-   * took; a row Up rejected keeps its suggestion. */
   async function acceptSuggestions(ids: number[], onProgress?: (pushed: number, total: number) => void): Promise<string> {
     const session = ctx.session()
     refresh([])
@@ -66,7 +59,6 @@ export function createSuggestionActions(ctx: CoreContext, deps: Parameters<typeo
   }
 
   function dismissSuggestions(ids: number[]): void {
-    // Kept and marked: re-suggesting (i, a sync) won't make it again.
     const dismissed = [...new Set(ids)].filter((id) => state.suggestions[id])
     mutate((db) => dismissSuggestionRows(db, dismissed))
     if (dismissed.length) recordUndo(`dismissed ${count(dismissed.length, "suggestion")}`, async () => {

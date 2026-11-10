@@ -5,22 +5,10 @@ import { adaptOAuthProvider, authorizeMcp, McpOAuthProvider, OAuthCallbackServer
 import { jaskmoneyHome } from "../storage/home"
 import { writeJsonAtomic } from "../storage/json"
 
-/**
- * Executor Cloud (executor.sh): your accounts (Gmail first) connected once
- * at executor.sh, reached here over MCP. Signing in is MCP OAuth in the
- * browser: Executor's page signs you in, or has you make an account if you
- * have none; the app registers itself there as a client (dynamic
- * registration) and keeps the tokens in ~/.jaskmoney/executor.json (mode
- * 600, never shown). Executor holds the Google sign-in: the app never sees
- * a Google token. As Conduit does (its connectors.js), programs run through
- * Executor's `execute` tool, e.g. `tools.gmail.api.users.gmailUsersMessagesList`.
- * Local Executor servers are for later (this file's history has one).
- */
 export const EXECUTOR_MCP = "https://mcp.executor.sh/mcp"
 export const EXECUTOR_SITE = "https://executor.sh"
 const RESOURCE_METADATA = "https://mcp.executor.sh/.well-known/oauth-protected-resource/mcp?elicitation_mode=model"
 const SCOPE = "mcp offline_access"
-/** The sign-in comes back to the app here (registered with Executor once). */
 const CALLBACK = { host: "127.0.0.1", port: 47823, path: "/executor/callback" }
 const TIMEOUT_MS = 15_000
 
@@ -34,10 +22,8 @@ function load(): Saved | undefined {
 
 function save(state: Saved): void { writeJsonAtomic(savedPath(), state) }
 
-/** Signed in: tokens are saved (they may still need refreshing). */
 export const executorSignedIn = () => !!load()?.tokens
 
-/** Forget the sign-in here (Executor keeps your accounts; revoke the app at executor.sh). */
 export function signOutExecutor(): void { rmSync(savedPath(), { force: true }) }
 
 function provider(redirectUrl: string, store: { load: () => Saved | undefined; save: (s: Saved) => void }, onRedirect: (url: URL) => void = () => {}) {
@@ -45,16 +31,10 @@ function provider(redirectUrl: string, store: { load: () => Saved | undefined; s
     clientMetadata: { client_name: "jaskmoney", scope: SCOPE } })
 }
 
-/**
- * Sign in in the browser: `open` gets Executor's sign-in address; resolves
- * when it comes back to the app's callback, with the tokens saved. `signal`
- * cancels (the browser page then just fails to return).
- */
 export async function signInExecutor(open: (url: string) => void, signal?: AbortSignal): Promise<void> {
   const server = await OAuthCallbackServer.listen({ ...CALLBACK, timeoutMs: 5 * 60_000 })
   try {
     const previous = load()
-    // A client registered for another redirect address would be refused: register again.
     let data: Saved = { serverUrl: EXECUTOR_MCP, ...(previous?.clientInformation && previous.redirectUrl === server.redirectUrl ? { clientInformation: previous.clientInformation } : {}) }
     const store = { load: () => data, save: (next: Saved) => { data = next } }
     let url: string | undefined
@@ -75,7 +55,6 @@ export async function signInExecutor(open: (url: string) => void, signal?: Abort
   }
 }
 
-/** A connection to Executor with the saved sign-in (tokens refresh as needed). */
 export async function connectExecutor(): Promise<McpClient> {
   const saved = load()
   if (!saved?.tokens || !saved.redirectUrl) throw new Error("Not signed in to Executor")
@@ -85,7 +64,6 @@ export async function connectExecutor(): Promise<McpClient> {
   return client
 }
 
-/** What Executor reaches for you: its tools, by name. */
 export interface ExecutorStatus { signedIn: boolean; tools: string[]; error: string | null }
 
 export type Connect<K extends keyof McpClient> = () => Promise<Pick<McpClient, K | "close">>
@@ -102,7 +80,6 @@ export async function executorStatus(connect: Connect<"listTools"> = connectExec
 
 export const textOf = (result: CallToolResult) => (result.content ?? []).flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
 
-/** Run a program through Executor's `execute` tool: its result, parsed when it's JSON. */
 export async function runExecutor(code: string, connect: Connect<"callTool"> = connectExecutor): Promise<unknown> {
   const client = await connect()
   try {
@@ -111,7 +88,6 @@ export async function runExecutor(code: string, connect: Connect<"callTool"> = c
     if (result.isError) throw new Error(text.slice(0, 300) || "Executor's program failed")
     let parsed: unknown
     try { parsed = JSON.parse(text) } catch { return text }
-    // { status, execution: { ok, value | error } }: the program's own value.
     const run = parsed as { status?: string; execution?: { ok?: boolean; value?: unknown; error?: unknown } }
     if (run?.execution) {
       if (run.execution.ok === false) throw new Error(String((run.execution.error as { message?: string })?.message ?? run.execution.error ?? "Executor's program failed").slice(0, 300))
@@ -122,8 +98,6 @@ export async function runExecutor(code: string, connect: Connect<"callTool"> = c
   } finally { await client.close().catch(() => {}) }
 }
 
-/** Your Gmail accounts linked in Executor, from its search: the Gmail
- * app's first (tools.gmail.api), then a Google bundle's (tools.google.api.gmail). */
 export interface GmailAccount { accountId: string; label: string; tools: string }
 
 export async function gmailAccounts(connect: Connect<"callTool"> = connectExecutor): Promise<GmailAccount[]> {
@@ -140,9 +114,7 @@ export async function gmailAccounts(connect: Connect<"callTool"> = connectExecut
   } finally { await client.close().catch(() => {}) }
 }
 
-/** The order emails the test looks for: Amazon's and eBay's, the last 90 days. */
 export const ORDER_EMAILS = "from:(amazon.com.au OR ebay.com OR ebay.com.au) newer_than:90d"
 
-/** The test: how many order emails Gmail finds (through Executor; read-only). */
 export const COUNT_ORDER_EMAILS = `const list = await tools.gmail.api.users.gmailUsersMessagesList({ input: { path: { userId: "me" }, query: { q: ${JSON.stringify(ORDER_EMAILS)}, maxResults: 50 } } });
 return { count: (list.messages ?? []).length, more: !!list.nextPageToken };`

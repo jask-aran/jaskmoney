@@ -1,9 +1,3 @@
-/**
- * `bun run server`: the core on its own, for clients to connect to (the
- * TUI with `--connect`). JASKMONEY_DB picks the
- * database and JASKMONEY_PORT the port. It doesn't sync with Up by itself
- * yet: a connected TUI's sync runs here.
- */
 import "../startup"
 import { createCore } from "../core/core"
 import { DEFAULT_PORT, serveCore } from "./serve"

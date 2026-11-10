@@ -18,7 +18,6 @@ import type { DataStore } from "../../state/dataStore"
 import { editText } from "../../domain/textField"
 import { queryPickerKey, listMove, scrolled, confirmTwice, type ScopeEntry } from "./shared"
 
-/** The model picker: type to filter, ↑↓ move, enter use it, esc leave it as it was. */
 function handleModelPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const picker = ui.state.modelPicker
   if (!picker || !data) return
@@ -30,11 +29,9 @@ function handleModelPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   })
 }
 
-/** Settings › AI models: the models, the sources, then the uses; enter opens the one at the cursor. */
 function handleSettingsAi(ui: UiStore, key: KeyEvent): void {
   const { name } = key
   if (name === "escape") { ui.leaveSettings(); return }
-  // Models, then sources (Executor: Gmail and your other accounts), then uses.
   const rows = aiPaneRows(AI_ROWS)
   const moved = listMove(key, ui.state.aiCursor, rows.length)
   if (moved != null) { ui.setState({ aiCursor: moved }); return }
@@ -47,9 +44,6 @@ function handleSettingsAi(ui: UiStore, key: KeyEvent): void {
 
 export const openAiDialog = (ui: UiStore, row: NonNullable<UiState["aiDialog"]>["row"]) => ui.setState({ aiDialog: aiDialogFor(row) })
 
-/** A use's dialog: j/k move over its queries, then its model actions;
- * enter opens a query (what it asks, its context, the exact request) or
- * runs the action: choose the model, connect one it needs; esc closes. */
 function handleAiUse(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const dialog = ui.state.aiUse
   if (!dialog || !data) return
@@ -82,7 +76,6 @@ function handleAiUse(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
 }
 
-/** Show a query, and build its exact request (nothing is sent). */
 async function openQuery(ui: UiStore, data: DataStore, use: AiUse, query: QueryId): Promise<void> {
   ui.setState({ aiSent: { use, query, part: null, error: null, top: 0, visible: 0, lines: 0 } })
   const opened = ui.opening("aiSent")
@@ -97,7 +90,6 @@ async function openQuery(ui: UiStore, data: DataStore, use: AiUse, query: QueryI
   }
 }
 
-/** A query's view: it scrolls; esc goes back to the use. */
 function handleAiSent(ui: UiStore, key: KeyEvent): void {
   const view = ui.state.aiSent
   if (!view) return
@@ -106,8 +98,6 @@ function handleAiSent(ui: UiStore, key: KeyEvent): void {
   if (top != null) ui.setState("aiSent", { top })
 }
 
-/** Executor's dialog (app/executorSource): j/k over the actions, enter runs
- * one; esc cancels a browser sign-in in progress and closes. */
 function handleExecutor(ui: UiStore, key: KeyEvent): void {
   const dialog = ui.state.executor
   if (!dialog) return
@@ -120,13 +110,11 @@ function handleExecutor(ui: UiStore, key: KeyEvent): void {
 
 type AiDialog = NonNullable<UiState["aiDialog"]>
 
-/** Save a typed field: a key, Clairic's account ID, or an LLM's model. */
 async function saveAiField(row: AiDialog["row"], field: NonNullable<AiDialog["field"]>, value: string, opened: Opening<AiDialog>, note: (text: string, ok: boolean | null) => void, data: DataStore): Promise<void> {
   try {
     if (field.action === "key") {
       if (!value) { opened.patch({ field: null }); return }
       await data.saveApiKeys(row === "up" ? { JASKMONEY_UP_TOKEN: value } : row === "jev" ? { JASKMONEY_JEV_TOKEN: value } : row === "workersAi" ? { JASKMONEY_CF_TOKEN: value } : { [LLM_PROVIDERS[row].keyName]: value })
-      // Clairic's account comes from its token: nobody has to find the ID.
       if (row === "workersAi") {
         const found = await data.findCloudflareAccount().catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }))
         opened.patch({ field: null, note: "name" in found ? { text: `Token saved · account: ${found.name}`, ok: true }
@@ -140,7 +128,6 @@ async function saveAiField(row: AiDialog["row"], field: NonNullable<AiDialog["fi
       opened.patch({ field: null, note: { text: value ? "Account ID saved" : "Account ID removed", ok: true } })
     } else if (isLlmRow(row)) {
       const { modelName, defaultModel } = LLM_PROVIDERS[row]
-      // An id the provider doesn't have is refused; the default isn't saved, so it follows the app's.
       createLlm({ provider: row, apiKey: "x", modelId: value || defaultModel })
       await data.saveApiKeys({ [modelName]: value && value !== defaultModel ? value : null, ...(row === "openrouter" ? { JASKMONEY_LLM_MODEL: null } : {}) })
       opened.patch({ field: null, note: { text: `Model: ${value || defaultModel}`, ok: true } })
@@ -150,7 +137,6 @@ async function saveAiField(row: AiDialog["row"], field: NonNullable<AiDialog["fi
   } finally { opened.patch({ busy: false }) }
 }
 
-/** A typed field (a key, an account ID): it owns input until esc or enter. */
 function handleAiField(ui: UiStore, key: KeyEvent, dialog: AiDialog, opened: Opening<AiDialog>, note: (text: string, ok: boolean | null) => void, data: DataStore): void {
   const { name } = key
   const row = dialog.row
@@ -163,20 +149,15 @@ function handleAiField(ui: UiStore, key: KeyEvent, dialog: AiDialog, opened: Ope
     settleData(ui, saveAiField(row, field, value, opened, note, data))
     return
   }
-  // A key is never shown, so edits apply at its end.
   const next = editText({ value: field.value, caret: field.action === "key" ? field.value.length : field.caret }, key)
   if (next) ui.setState("aiDialog", "field", { value: next.value, caret: next.caret })
 }
 
-/** The AI models dialog: j/k pick an action, enter runs it; a field (key,
- * account id, model) takes typing and pasting until enter saves or esc
- * backs out; remove needs enter twice; esc closes. */
 function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const dialog = ui.state.aiDialog
   if (!dialog || !data) return
   const { name } = key
   const row = dialog.row
-  // Work that finishes after the dialog closed writes nothing (Opening).
   const opened = ui.opening("aiDialog")
   const note = (text: string, ok: boolean | null) => opened.patch({ note: { text, ok }, busy: false })
   if (dialog.field) {
@@ -196,7 +177,6 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       if (isLlmRow(row)) settleData(ui, startLlmSignIn(ui, data, row), (result) => { if (result) note(result.text, result.ok) })
       return
     case "model":
-      // A list of the provider's models, not a slug to type.
       if (isLlmRow(row)) openModelPicker(ui, row)
       return
     case "key":
@@ -215,14 +195,11 @@ function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
       void testAi(row).then((result) => note(result.text, result.ok))
       return
     case "remove":
-      // Enter twice (state/armed); moving off the row disarms, like any key.
       confirmTwice(ui, data, { kind: "aiKey", id: row, label: aiRowLabel(row), with: "enter" }, (text) => opened.patch({ cursor: 0, note: { text, ok: true } }))
       return
   }
 }
 
-/** The browser sign-in modal: it owns input; esc cancels, and when pi-ai
- * asks, the code or redirect URL is typed or pasted and enter sends it. */
 function handleLlmSignIn(ui: UiStore, key: KeyEvent): void {
   const flow = ui.state.llmSignIn
   if (!flow) return

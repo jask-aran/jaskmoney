@@ -9,13 +9,6 @@ import { dryRunRules, filterRowNames } from "./rules"
 import { descKey, groupByDescription } from "./transactionGroups"
 import type { Category, Rule, SavedFilter, Tag, Transaction } from "./types"
 
-/**
- * The app's history as plain data for the AI: what's in a category or on a
- * tag, what you did recently and how, which descriptions are reliably one
- * thing, what the rows have in common, what looks alike but isn't, and how a
- * filter expression would do. Read-only and JSON-shaped (no ids the model
- * must look up, names instead); every list is capped.
- */
 export interface HistoryData {
   transactions: Transaction[]
   categories: Category[]
@@ -24,14 +17,9 @@ export interface HistoryData {
   savedFilters: SavedFilter[]
   categoryLog: CategoryLogEntry[]
   tagLog: TagLogEntry[]
-  /** Who set each row's category ("provider": Up; "type": sync from Up's
-   * transaction type; "user", "pending", "rule"); absent rows have none. */
   categorySources?: Map<number, CategorySource | null>
 }
 
-/** The filter language for the model (domain/filterLanguage, the same
- * description the search help shows), and what it can't test. Quoting is
- * advised: a stored rule's value then can't run into the next word. */
 export const FILTER_GUIDE = `JQL, the app's filter language (rules are written in it). The parser takes values unquoted, but in a rule quote any value with spaces: cat:"Rent & Mortgage".
 ${filterGuide()}
 bank_text, bought and message: testable with info:.
@@ -39,7 +27,6 @@ Not testable in a filter (context only): bank_type, paid, foreign_amount, direct
 
 type Group<T> = { key: T; rows: number; share: number }
 
-/** The most common values of `pick` among `rows` (≥ min rows each), with their share. */
 function common<T>(rows: Transaction[], pick: (t: Transaction) => T | null | undefined, limit = 5, min = 1): Group<T>[] {
   const counts = new Map<T, number>()
   for (const t of rows) {
@@ -52,7 +39,6 @@ function common<T>(rows: Transaction[], pick: (t: Transaction) => T | null | und
 
 const round = (n: number) => Math.round(n * 100) / 100
 
-/** What a set of rows share: accounts, Up's types, card use, currencies, repeated amounts. */
 function sharedFacts(rows: Transaction[]) {
   const named = <T>(groups: Group<T>[], name: string) => groups.map(({ key, rows, share }) => ({ [name]: key, rows, share }))
   return {
@@ -67,12 +53,6 @@ function sharedFacts(rows: Transaction[]) {
   }
 }
 
-/**
- * For each exact description among `inside` (most rows first): how many rows
- * have it in all, how many are inside, which categories hold the rest, and
- * how many wait for one. A description whose rows are all inside is a
- * perfect match.
- */
 function descriptionGroups(inside: Transaction[], all: Transaction[], limit = 30) {
   const insideIds = new Set(inside.map((t) => t.id))
   const byKey = groupByDescription(all)
@@ -94,15 +74,12 @@ function descriptionGroups(inside: Transaction[], all: Transaction[], limit = 30
   }).sort((a, b) => b.inside - a.inside || a.description.localeCompare(b.description)).slice(0, limit)
 }
 
-/** Words (4+ letters) of the inside rows' descriptions. */
 function words(rows: Transaction[]): Set<string> {
   const out = new Set<string>()
   for (const t of rows) for (const w of t.description.toLowerCase().match(/[a-z]{4,}/g) ?? []) out.add(w)
   return out
 }
 
-/** Rows outside that share a word with the inside rows' descriptions, by
- * description: what a desc: rule might catch by mistake. */
 function lookalikes(inside: Transaction[], all: Transaction[], limit = 12) {
   const insideIds = new Set(inside.map((t) => t.id))
   const insideKeys = new Set(inside.map(descKey))
@@ -127,11 +104,6 @@ function ruleList(data: HistoryData, keep: (rule: Rule) => boolean) {
   }))
 }
 
-/**
- * A category's history: its rows' shared facts, your recent choices into it
- * (newest first, with how and what it was before), its descriptions by
- * purity, lookalikes elsewhere, and the rules that already set it.
- */
 export function categoryHistory(data: HistoryData, categoryId: number, limits: { recent?: number; descriptions?: number } = {}) {
   const category = data.categories.find((c) => c.id === categoryId)
   if (!category) throw new Error(`no category ${categoryId}`)
@@ -153,7 +125,6 @@ export function categoryHistory(data: HistoryData, categoryId: number, limits: {
   }
 }
 
-/** A tag's history, as categoryHistory: rows tagged, recent changes, descriptions, lookalikes, rules adding it. */
 export function tagHistory(data: HistoryData, tagId: number, limits: { recent?: number; descriptions?: number } = {}) {
   const tag = data.tags.find((t) => t.id === tagId)
   if (!tag) throw new Error(`no tag ${tagId}`)
@@ -171,7 +142,6 @@ export function tagHistory(data: HistoryData, tagId: number, limits: { recent?: 
   }
 }
 
-/** Rows waiting for a category, by exact description (most first). */
 export function waitingOverview(data: HistoryData, limit = 40) {
   const waiting = data.transactions.filter((t) => isUncategorised(t) && !t.excluded)
   const groups = groupByDescription(waiting)
@@ -186,7 +156,6 @@ export function waitingOverview(data: HistoryData, limit = 40) {
   }
 }
 
-/** The rows a filter expression finds, or why it can't be a rule. */
 export function findRows(data: HistoryData, expr: string): { rows: Transaction[] } | { error: string } {
   const { node, error } = parseFilterStrict(expr)
   if (!node || error) return { error: error ?? "empty expression" }
@@ -198,13 +167,6 @@ export function findRows(data: HistoryData, expr: string): { rows: Transaction[]
 
 type MatchTarget = { categoryId: number } | { tagId: number }
 
-/**
- * How a filter expression does against the history, for a target category
- * or tag: rows it finds, how many are already in the target and how many
- * elsewhere (its precision), how many wait, how many of your recent choices
- * it covers (its recall), whether rules already do it, and samples, mistakes
- * first.
- */
 export function matchReport(data: HistoryData, expr: string, target: MatchTarget, sample = 8) {
   const result = findRows(data, expr)
   if ("error" in result) return { expr, valid: false as const, error: result.error }
@@ -228,7 +190,6 @@ export function matchReport(data: HistoryData, expr: string, target: MatchTarget
     waiting: waiting.length,
     precision: decided ? ("tagId" in target ? inTarget.length / decided : round(inTarget.length / decided)) : null,
     covers_your_choices: { of: chosen.size, covered: [...chosen].filter((id) => foundIds.has(id)).length },
-    // Rows in the target that Up (or sync, from Up's type) categorised: a rule adds nothing for them.
     set_by_up: "categoryId" in target ? inTarget.filter((t) => ["provider", "type"].includes(data.categorySources?.get(t.id) ?? "")).length : 0,
     already_by_rules: found.length > 0 && ("categoryId" in target ? alreadyByRules(data, found, target.categoryId) : alreadyTaggedByRules(data, found, target.tagId)),
     by_category: byCategory,
@@ -236,14 +197,12 @@ export function matchReport(data: HistoryData, expr: string, target: MatchTarget
   }
 }
 
-/** Every row found would get the category from existing rules anyway. */
 function alreadyByRules(data: HistoryData, found: Transaction[], categoryId: number): boolean {
   const fresh = found.map((t) => ({ ...t, categoryId: null, tagIds: [] }))
   const set = new Map(dryRunRules(fresh, data.rules, data.savedFilters, data.categories, data.tags).changes.filter((c) => c.categorySet).map((c) => [c.id, c.categoryId]))
   return fresh.every((t) => set.get(t.id) === categoryId)
 }
 
-/** Remove only the target tag: existing rules must add it to every row. */
 function alreadyTaggedByRules(data: HistoryData, found: Transaction[], tagId: number): boolean {
   const fresh = found.map((t) => ({ ...t, tagIds: t.tagIds.filter((id) => id !== tagId) }))
   const tagged = new Set(dryRunRules(fresh, data.rules, data.savedFilters, data.categories, data.tags).changes.filter((c) => c.tagIds.includes(tagId)).map((c) => c.id))

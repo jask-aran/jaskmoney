@@ -36,8 +36,6 @@ function handleFilterPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void 
   })
 }
 
-/** The theme picker: moving shows the theme at the cursor; enter keeps it;
- * esc closes, and App puts the saved theme back. */
 function handleThemePicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const picker = ui.state.themePicker
   if (!picker) return
@@ -51,7 +49,6 @@ function handleThemePicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 
 function handleDryRun(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (key.name === "escape") { ui.setState({ dryRun: null }); return }
-  // Scrolls like a list whose rows are the scroll positions.
   const lines = ui.state.dryRun?.report?.rules.reduce((n, result) => n + 4 + result.samples.length, 0) ?? 0
   const moved = listMove(key, (ui.state.dryRun?.scroll ?? 0), Math.max(0, lines - (ui.state.dryRun?.visible ?? 10)) + 1, (ui.state.dryRun?.visible ?? 10))
   if (moved != null) ui.setState("dryRun", { scroll: moved })
@@ -101,7 +98,6 @@ function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
           patch[id] = "add"
           opened.patch({ patch })
         }
-        // Approved deviation from Go: enter without staged changes makes no edit.
         if (!data || !Object.keys(patch).length) {
           opened.close()
           ui.setStatus("Tags unchanged")
@@ -122,7 +118,6 @@ function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
         const base = tagPickerState(data.transactions(), targets, id)
         const patch = { ...dialog.patch }
         const current = patch[id]
-        // Approved deviation from Go: mixed tags cycle back to their original state.
         if (base === "some") {
           if (!current) patch[id] = "add"
           else if (current === "add") patch[id] = "remove"
@@ -135,8 +130,6 @@ function handleTagPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   })
 }
 
-/** T: choose a tag (or a group found in the history, or a new name) to
- * find transactions for. */
 function handleTagChooser(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const choices = data ? tagChoices(data.state.tags, data.tagGroups(), (ui.state.tagChooser?.query ?? "")) : []
   queryPickerKey(key, { query: (ui.state.tagChooser?.query ?? ""), cursor: (ui.state.tagChooser?.cursor ?? 0) }, choices.length, {
@@ -157,16 +150,12 @@ function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     update: (next) => { ui.setState({ catPicker: { query: next.query, cursor: next.cursor } }) },
     apply: () => {
       const cat = cats[(ui.state.catPicker?.cursor ?? 0)]
-      // Targets were fixed when the picker opened (the Transactions
-      // selection or cursor row, the open detail row, or a merchant group).
       const targets = ui.state.pickerTargets
       if (cat && data && targets.length) {
         ui.closeCatPicker()
         ui.setStatus(`Categorizing ${targets.length} → ${cat.name}…`)
         let resuggest: Promise<string> | undefined
         data.categorizeTransactions(targets, cat.id, (pushed, total) => {
-          // In the Uncategorised view the rows have left: they leave the
-          // selection too, as y's do, so nothing unseen stays selected.
           if (pushed === 0 && data.state.uncategorisedOnly) {
             const left = new Set(targets)
             ui.setState({ selectedIds: Object.fromEntries(Object.entries(ui.state.selectedIds).filter(([id]) => !left.has(Number(id)))) })
@@ -195,7 +184,6 @@ function handleCatPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
 function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (name === "f1") { ui.setState({ searchHelp: { full: false, top: 0, visible: 0 } }); return }
-  // ↑ on a smart search's filter brings its question back, to reword it.
   const question = smartQuestionFor(ui.state, (ui.state.filterBar?.draft ?? ""))
   if (name === "up" && question) {
     const draft = `?${question}`
@@ -213,12 +201,10 @@ function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
   if (name === "return" || name === "enter") {
     const draft = (ui.state.filterBar?.draft ?? "")
-    // ?<query>: ask the models for a filter; the draft stays open with it.
     if (draft.trimStart().startsWith("?")) {
       if (data) void runSmartSearch(ui, data, draft, () => resetTransactionCursors(ui, data))
       return
     }
-    // A smart search's filter, applied as written, keeps saying who wrote it.
     const smart = ui.state.smartQuestion
     const written = smart && smart.expr === draft ? smart.written : undefined
     ui.closeFilter(true)
@@ -232,7 +218,6 @@ function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     } else if (asks) {
       ui.setStatus([written ? writtenText(written) : "", "Jev judging…"].filter(Boolean).join(" · "))
     } else if (data && !data.scopedTransactions().length) {
-      // Words that are never on one row together: say how to find either.
       const either = eitherInstead(data.state.filterExpr ? unwrap(data.state.filterExpr) : null, data.accountScoped())
       ui.setStatus(either ? `No row has all of those words · for any of them: ${either}` : "No matches · F1 for search help")
     } else {
@@ -244,16 +229,12 @@ function handleFilter(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const next = editText({ value: (ui.state.filterBar?.draft ?? ""), caret: (ui.state.filterBar?.caret ?? 0) }, key)
   if (next) {
     ui.setState({ filterBar: { draft: next.value, caret: next.caret } })
-    // A smart search is plain English until enter asks for its filter.
     if (next.value.trimStart().startsWith("?")) return
     data?.setFilterLive(next.value)
     resetTransactionCursors(ui, data)
   }
 }
 
-/** The search help: m switches between the brief and the full version;
- * esc, enter, F1 or q close it; j/k and paging scroll it when the screen
- * is too short for it all. */
 function handleSearchHelp(ui: UiStore, key: KeyEvent): void {
   if (["escape", "return", "enter", "f1", "q"].includes(key.name)) { ui.setState({ searchHelp: null }); return }
   if (key.name === "m") { ui.setState("searchHelp", { full: !(ui.state.searchHelp?.full ?? false), top: 0 }); return }
@@ -261,8 +242,6 @@ function handleSearchHelp(ui: UiStore, key: KeyEvent): void {
   if (top != null) ui.setState("searchHelp", { top })
 }
 
-/** The note box: enter saves (empty removes) and re-suggests the merchant's
- * waiting rows; esc leaves it as it was. */
 function handleMerchantNote(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const box = ui.state.merchantNote
   if (!box) return

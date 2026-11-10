@@ -13,7 +13,6 @@ export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof 
   const { state, set, mutate, transactions, recordUndo } = ctx
   const makeOfferedRule = createOfferedRuleMaker(ctx, deps)
 
-  /** The history the AI reads (domain/aiHistory): current state and the logs. */
   function historyData(): HistoryData {
     return {
       transactions: transactions(), categories: state.categories, tags: state.tags, rules: state.rules, savedFilters: state.savedFilters,
@@ -22,16 +21,12 @@ export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof 
     }
   }
 
-  /** Rules worth making from your repeated categorisations (all of them, or
-   * those for the descriptions of `ids`). */
   function ruleOffersFor(ids?: number[]): RuleOffer[] {
     if (!ctx.db) return []
     const descriptions = ids && transactions().filter((t) => ids.includes(t.id)).map((t) => t.description)
     return ruleOffers(loadCategoryChoices(ctx.db), transactions(), state.rules, state.savedFilters, state.categories, state.tags, descriptions)
   }
 
-  /** Ask the general model for rules (ai/ruleWriter); `llm` replaces the
-   * OpenRouter one (tests). Its offers replace the last run's. */
   const writing = createLane(ctx, "writingRules", "Already asking for rules")
 
   function askForRules(llm?: Llm, focus?: string): Promise<string> {
@@ -39,7 +34,6 @@ export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof 
       const session = ctx.session()
       const model = llm ?? createLlm()
       const result = await writeRules(model, historyData(), { declined: loadRuleDeclines(session.db), focus })
-      // Offers name this database's categories and tags.
       ctx.ensureCurrent(session, "the model wrote rules")
       set({ aiRuleOffers: result.offers })
       const cost = result.usage.cost ? ` · $${result.usage.cost.toFixed(4)}` : ""
@@ -49,7 +43,6 @@ export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof 
     })
   }
 
-  /** " · R: rule for Coles → Groceries", or how many, for the rows just categorised. */
   function ruleOfferNote(ids: number[]): string {
     const offers = ruleOffersFor(ids)
     if (!offers.length) return ""
@@ -73,13 +66,10 @@ export function createRuleOffers(ctx: CoreContext, deps: Pick<ReturnType<typeof 
   return { historyData, askForRules, ruleOfferNote, makeOfferedRule, declineRuleOffer }
 }
 
-/** createRuleOffers' makeOfferedRule, with what it reads from the core. */
 function createOfferedRuleMaker(ctx: CoreContext, deps: Pick<ReturnType<typeof createUpPush>, "retryPendingCategories" | "retryPendingTags" | "applyTagPatch">) {
   const { state, set, transactions, recordUndo, saveSavedFilter, createSettingsRule, applyRules, deleteSettingsRule, deleteSavedFilter, restoreCategories } = ctx
   const { retryPendingCategories, retryPendingTags, applyTagPatch } = deps
 
-  /** Make an offered rule: a saved filter and a rule (last in order), then
-   * run it on the rows it finds waiting, Up rows sent to Up. */
   async function makeOfferedRule(offer: RuleOffer): Promise<string> {
     const session = ctx.session()
     const target = offer.tagId != null ? state.tags.find((t) => t.id === offer.tagId) : state.categories.find((c) => c.id === offer.categoryId)

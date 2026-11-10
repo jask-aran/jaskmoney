@@ -1,20 +1,10 @@
 import { theme, whenThemeChanges } from "../../theme"
 
-/**
- * Colours for savers' chart lines, from the emoji Up puts at the start of
- * a saver's name (🏖️ Holiday, 💰 General, 🚨 Emergency), kept apart so no
- * two lines read alike. A saver without a known emoji takes a colour from
- * its name. Data colours: the palette's accents, not tones.
- */
-
-/** The accents a line may take, round the colour wheel. Rosewater,
- * flamingo and maroon are left out: each sits too near pink or red. */
 const LINE_NAMES = ["red", "peach", "yellow", "green", "teal", "sky", "sapphire", "blue", "lavender", "mauve", "pink"] as const
 type LineColour = (typeof LINE_NAMES)[number]
 const LINE_COLOURS = {} as Record<LineColour, string>
 whenThemeChanges(() => { for (const name of LINE_NAMES) LINE_COLOURS[name] = theme[name] })
 
-/** What colour each emoji mostly is. */
 const EMOJI: Record<LineColour, string> = {
   red: "🚨❤🍎🍓🌹🎁🧧🍒🚒🍅🎈⛑🩸🆘📍🔴🥊🧨🎯🚗🏎🌶🥩🏥🛑",
   peach: "🍊🎃🦊🧡🔥🏀🥕🍑🦁🐯🍂🍁🚧🟠🏜🏠🏡🐶🍔☕🎸🥐🍕🧱🏘",
@@ -33,8 +23,6 @@ for (const [colour, emoji] of Object.entries(EMOJI) as Array<[LineColour, string
   for (const e of emoji) BY_EMOJI.set(e, colour)
 }
 
-/** The emoji a name starts with, without its variation selector; null when
- * it starts with something else. */
 export function leadingEmoji(name: string): string | null {
   const first = [...new Intl.Segmenter().segment(name.trim())][0]?.segment ?? ""
   return /\p{Extended_Pictographic}/u.test(first) ? first.replace(/[︎️]/g, "") : null
@@ -51,10 +39,8 @@ const apart = (a: string, b: string) => {
   const d = Math.abs(hue(a) - hue(b))
   return Math.min(d, 360 - d)
 }
-/** Lines closer than this round the wheel read as one colour. */
 const MIN_APART = 16
 
-/** The colour a saver would like: its emoji's, else one from its name. */
 function preferred(name: string): LineColour {
   const emoji = leadingEmoji(name)
   const known = emoji ? BY_EMOJI.get(emoji) ?? BY_EMOJI.get([...emoji][0]!) : undefined
@@ -65,12 +51,6 @@ function preferred(name: string): LineColour {
   return keys[h % keys.length]!
 }
 
-/**
- * A colour per saver, in the order given (give the most important first:
- * it keeps its own). Each takes its preferred colour unless that's within
- * MIN_APART of one already taken; then the free colour nearest it round
- * the wheel. With more savers than colours, the rest repeat.
- */
 export function saverInks(names: string[]): string[] {
   const taken: string[] = []
   return names.map((name) => {

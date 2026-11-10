@@ -4,7 +4,6 @@ import { testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
 import { ui } from "./uiStore"
 
-/** CSV rows (tagging never calls Up), no Jev key, no network. */
 function setup() {
   testEnv("JASKMONEY_JEV_TOKEN", "")
   const network = spyOn(globalThis, "fetch").mockImplementation(Object.assign(() => { throw new Error("network is forbidden") }, { preconnect: globalThis.fetch.preconnect }))
@@ -25,7 +24,6 @@ function setup() {
   return { db }
 }
 
-/** A fake Jev: coffee rows 0.9, the rest 0.1; `sent` gets each row's description. */
 function fakeJev() {
   const sent: string[] = []
   const states: unknown[] = []
@@ -39,7 +37,6 @@ function fakeJev() {
   return { ai, sent, states }
 }
 
-/** A Food category with rows 1–4 in it (row 5, the old one, stays uncategorised). */
 function food(db: ReturnType<typeof setup>["db"]): number {
   const id = Number(db.query("INSERT INTO categories (name, color) VALUES ('Food', '#fff')").run().lastInsertRowid)
   db.query("UPDATE transactions SET category_id = ? WHERE id <= 4").run(id)
@@ -55,18 +52,14 @@ test("a tag's review: tag history first, Jev for the rest of its categories, tol
   await data.applyTagPatch([1], { [coffee]: "add" })
   const { ai, sent, states } = fakeJev()
   await data.openTagReview({ tagId: coffee, name: "COFFEE", categoryIds, about: "coffee out, not beans" }, ai)
-  // Row 1 has the tag; row 5 isn't in Food; neither is asked about.
   expect(sent.sort()).toEqual(["Bunnings", "Click Coffee", "Hilltop Coffee"])
   expect(states[0]).toMatchObject({ about: "coffee out, not beans" })
-  // Most sure first; Bunnings (0.1) isn't shown.
   expect(shown().sort()).toEqual([2, 3])
   expect(data.state.tagReview!.candidates[2]).toMatchObject({ source: "jev", confidence: 0.9 })
-  // x: gone for the session, even after reopening.
   await data.dismissTagCandidates([3])
   expect(shown()).toEqual([2])
   await data.openTagReview({ tagId: coffee, name: "COFFEE", categoryIds, about: null }, ai)
   expect(shown()).toEqual([2])
-  // y: tagged, and out of the review.
   expect(await data.acceptTagCandidates([2])).toContain("+COFFEE")
   expect(data.state.transactions.find((t) => t.id === 2)!.tagIds).toContain(coffee)
   expect(shown()).toEqual([])

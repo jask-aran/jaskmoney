@@ -12,36 +12,23 @@ import { CHART_CURVES, CHART_LABEL_MODES, type ChartCurveId, type ChartLabelMode
 
 import { BACKDROPS, type BackdropId } from "../ui/welcome/backdrop"
 
-
 export interface UiPrefs {
   filterUsage?: Record<string, string>
   timeframe?: Pick<TimeframeState, "family" | "lookback" | "period" | "custom">
   accountSelection?: AccountSelection
-  /** Two (saved before the grid) or four. */
   chartViews?: number[]
   weekStart?: WeekStart
-  /** What you expect to be paid each payday, after tax (the Budgets tab's
-   * plan: pay less spending goes to savers). 0 or absent: not set. */
   expectedPay?: number
-  /** Charts draw an x-axis line under the plot (default off). */
   xAxis?: boolean
-  /** The colour theme's id (themes.ts; default Catppuccin Mocha). */
   theme?: string
   chartMotion?: ChartMotionMode
   chartSpeed?: ChartSpeedId
-  /** The draw-in's ease-out curve (CHART_CURVES; default cubic). */
   chartCurve?: ChartCurveId
   openRange?: OpenRange
   chartLabels?: ChartLabelMode
   backdrop?: BackdropId
-  /** Balance charts' y-axis runs from $0 rather than fitting the balances
-   * (default off). */
   zeroAxis?: boolean
-  /** The Overview's Range pane as text (the totals against before, line
-   * by line) rather than its bars (default off: the bars). */
   rangeText?: boolean
-  /** What the Range pane's bar opens out to: where the net went (default)
-   * or where the spending went. */
   rangeView?: "net" | "spending"
 }
 
@@ -50,17 +37,10 @@ export interface SettingsConfig {
   version: 2
   savedFilters: SavedFilter[]
   importProfiles: ImportProfile[]
-  /** Nerd Font category icons (off: coloured dots). A per-machine display
-   * choice, so it lives here rather than in the database. Default on. */
   icons?: boolean
-  /** The first-run setup has been through (finished or skipped): it
-   * doesn't open again by itself (Settings › Up Bank runs it again). */
   welcomed?: boolean
 }
 
-/** The former hard-coded importer is now an ordinary editable profile. It is
- * supplied whenever a config has no profiles, so clearing the database never
- * leaves an ANZ CSV without a profile to import it. */
 export const DEFAULT_IMPORT_PROFILES: ImportProfile[] = [{
   id: "anz", name: "ANZ Credit", account: "ANZ CREDIT", accountType: "credit",
   importPrefix: "anz", hasHeader: false, delimiter: ",", dateColumn: 0,
@@ -69,7 +49,6 @@ export const DEFAULT_IMPORT_PROFILES: ImportProfile[] = [{
 
 function defaultProfiles(): ImportProfile[] { return DEFAULT_IMPORT_PROFILES.map((profile) => ({ ...profile, descriptionColumns: [...profile.descriptionColumns] })) }
 
-/** JASKMONEY_CONFIG overrides the path (tests point it at a scratch file). */
 export function defaultSettingsConfigPath(): string {
   if (process.env.JASKMONEY_CONFIG) return process.env.JASKMONEY_CONFIG
   return join(jaskmoneyHome(), "settings.json")
@@ -92,8 +71,6 @@ export function nextSavedFilterId(filters: SavedFilter[]): string {
   return nextSettingsId("filter", filters)
 }
 
-/** Saved in full (canonicalFilter): brackets, OR and NOT in capitals, full
- * names when `names` are given; refused only when it has no one reading. */
 export function validateSavedFilter(filter: SavedFilter, other: SavedFilter[] = [], names?: FilterNames): SavedFilter {
   const id = normalizeSavedFilterId(filter.id)
   const name = filter.name.trim()
@@ -177,16 +154,12 @@ export function loadSettingsConfig(path = defaultSettingsConfigPath()): Settings
     if (seen.has(filter.id)) throw new Error(`duplicate saved filter ID ${filter.id}`)
     seen.add(filter.id)
   }
-  // v1 had profile records but no explicit date order; its only importer was
-  // ANZ, whose legacy date layout is D/M/YYYY.
   const importProfiles = Array.isArray(raw.importProfiles)
     ? raw.importProfiles.map((p) => validateImportProfile({ dateFormat: "DMY", ...(p as Omit<ImportProfile, "dateFormat">) }))
     : []
   return { version: 2, savedFilters, importProfiles: importProfiles.length ? importProfiles : defaultProfiles(), icons: raw.icons !== false, welcomed: raw.welcomed === true, ui: parseUiPrefs("ui" in raw ? raw.ui : undefined) }
 }
 
-/** Rename is atomic on the same filesystem; a config write can therefore
- * never leave a partially written settings document. */
 export function saveSettingsConfig(config: SettingsConfig, path = defaultSettingsConfigPath()): void {
   const normalized: SettingsConfig = {
     version: 2,

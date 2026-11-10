@@ -1,12 +1,3 @@
-/**
- * Smart search with and without Clairic: each query asked of Jev and Clairic
- * once, then its filter built twice from those same answers, with Clairic's
- * values and without, so the difference is Clairic's alone. On the built-in
- * made-up demo (never your data); a query passes when its filter holds every
- * expected piece. Asks Jev and Workers AI for real.
- *
- *   bun run eval:search
- */
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -20,7 +11,6 @@ import { coverQuestions, searchQuestions, searchTermQuestions } from "../domain/
 import { categoryUses } from "../domain/suggest"
 import { data } from "../state/dataStore"
 
-/** [query, what the filter must contain (lower case), what it must not] */
 const CASES: Array<[string, string[], string[]?]> = [
   ["spotify", ["spotify"]],
   ["netflix and stan", ["netflix", "stan"]],

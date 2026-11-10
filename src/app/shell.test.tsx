@@ -23,17 +23,12 @@ describe("shell render M0", () => {
     await t.renderOnce()
     await t.flush()
     const frame = t.captureCharFrame()
-    // A net position for all accounts and one per bank; both savers are one
-    // row with their combined balance.
     expect(frame).toContain("$10,052.37")
     expect(frame).toContain("$8,948.01")
     expect(frame).not.toContain("Holiday")
-    // The last match: the header's status names the selection too. A name
-    // shares its run with the account's mark when they're one colour.
     const span = (text: string) => t.captureSpans().lines.flatMap((line) => line.spans).findLast((s) => s.text === text || s.text.endsWith(` ${text}`))!
     expect(span("Spending").attributes & TextAttributes.BOLD).toBe(TextAttributes.BOLD)
     expect(span("Bills").attributes & TextAttributes.BOLD).toBe(0)
-    // Unfocused, the selected row sits on the canvas like the others.
     expect(span("Spending").bg.toInts()).toEqual(span("Bills").bg.toInts())
 
     ui.setState({ focusedSection: "mgr.accounts" })

@@ -9,17 +9,10 @@ import { createLatestRun } from "./ask"
 import type { SetStoreFunction } from "solid-js/store"
 import type { DataState } from "./store"
 
-/** A tag created from a review (the schema's default tag colour). */
 const NEW_TAG_COLOR = "#94e2d5"
 
 function createTagReviewOpening(state: DataState, setState: SetStoreFunction<DataState>, core: ReturnType<typeof createMirror>["core"], tagRuns: ReturnType<typeof createLatestRun>, stopTagReview: () => void) {
-  /**
-   * Show the transactions `target` could go on (see tagSuggest): the group's
-   * and history's at once, Jev's as its answers land (`ai` replaces the Jev
-   * client in tests). Returns a summary, or "" when closed meanwhile.
-   */
   async function openTagReview(target: TagTarget, ai?: Pick<JevClient, "judge">): Promise<string> {
-    // Tag names are upper case (createTag); a new one is named as it will be.
     if (target.tagId == null) target = { ...target, name: target.name.trim().toUpperCase() }
     stopTagReview()
     const run = tagRuns.start()
@@ -59,7 +52,6 @@ function createTagReviewOpening(state: DataState, setState: SetStoreFunction<Dat
 
 export function createTagReview(state: DataState, setState: SetStoreFunction<DataState>, core: ReturnType<typeof createMirror>["core"], transactions: ReturnType<typeof createHistoryRows>["transactions"], applyTagPatch: ReturnType<typeof createTransactionCommands>["applyTagPatch"]) {
   const tagRuns = createLatestRun()
-  /** Identifies the review opening when undo restores a dismissal. */
   let tagReviewId = 0
   function stopTagReview() {
     tagReviewId++
@@ -68,14 +60,11 @@ export function createTagReview(state: DataState, setState: SetStoreFunction<Dat
 
   const { openTagReview } = createTagReviewOpening(state, setState, core, tagRuns, stopTagReview)
 
-  /** Put the review's tag on the candidates among `ids` (creating the tag
-   * when it is new: anywhere, a trip's included); they leave the review. */
   async function acceptTagCandidates(ids: number[]): Promise<string> {
     const review = state.tagReview
     if (!review) return ""
     const take = ids.filter((id) => review.candidates[id])
     if (!take.length) return "Nothing to tag"
-    // The review may close (or another open) while the core answers.
     const reviewId = tagReviewId
     const open = () => reviewId === tagReviewId && !!state.tagReview
     let tagId = review.tagId
@@ -85,12 +74,10 @@ export function createTagReview(state: DataState, setState: SetStoreFunction<Dat
     }
     const summary = await applyTagPatch(take, { [tagId]: "add" }, "review")
     const tagged = new Set(transactions().filter((t) => t.tagIds.includes(tagId!)).map((t) => t.id))
-    // produce: a store merges a plain object into the old one, keeping removed keys.
     if (open()) setState("tagReview", "candidates", produce((c) => { for (const id of take) if (tagged.has(id)) delete c[id] }))
     return summary
   }
 
-  /** Drop candidates from the review, remembered for the tag (by name). */
   function dismissTagCandidates(ids: number[]): Promise<void> {
     const review = state.tagReview
     if (!review) return Promise.resolve()

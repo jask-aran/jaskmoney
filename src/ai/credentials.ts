@@ -3,18 +3,6 @@ import { dirname, join } from "node:path"
 import { writeJsonAtomic } from "../storage/json"
 import { defaultSettingsConfigPath } from "../state/settingsConfig"
 
-/**
- * API keys (and the Up token), kept in credentials.json beside settings.json
- * in ~/.jaskmoney (owner-only, mode 600). A saved key takes priority over the environment
- * variable of the same name (Bun loads `.env`), so what the user typed is
- * what is used. A secret never leaves the core: clients learn only where it
- * comes from (saved or the environment), not one character of it.
- */
-
-// The models' settings sit beside their keys: the models, the provider
-// writing rules, and whether search uses Clairic aren't secrets
-// (NOT_SECRET); JASKMONEY_LLM_MODEL is the OpenRouter model's former name,
-// still read.
 export const CREDENTIAL_NAMES = [
   "JASKMONEY_UP_TOKEN",
   "JASKMONEY_JEV_TOKEN", "JASKMONEY_CF_TOKEN", "JASKMONEY_CF_ACCOUNT_ID",
@@ -46,8 +34,6 @@ export function loadSavedCredentials(path = credentialsPath()): Saved {
   }
 }
 
-/** Save or (with null) remove keys; the file is written owner-only, then
- * moved into place. */
 export function saveCredentials(patch: Partial<Record<CredentialName, string | null>>, path = credentialsPath()): void {
   const next: Saved = { ...loadSavedCredentials(path) }
   for (const name of CREDENTIAL_NAMES) {
@@ -59,12 +45,10 @@ export function saveCredentials(patch: Partial<Record<CredentialName, string | n
   writeJsonAtomic(path, next)
 }
 
-/** The environment with saved keys laid over it: what the AI clients read. */
 export function credentialEnv(env: Record<string, string | undefined> = process.env): Record<string, string | undefined> {
   return { ...env, ...loadSavedCredentials() }
 }
 
-/** Where a key comes from, if anywhere. */
 export function credentialSource(name: CredentialName, env: Record<string, string | undefined> = process.env, saved = loadSavedCredentials()): "saved" | "env" | null {
   if (saved[name]) return "saved"
   return env[name]?.trim() ? "env" : null

@@ -8,7 +8,6 @@ export class UpApiError extends Error {
   }
 }
 
-/** The Up token: saved in ~/.jaskmoney/credentials.json, else the environment. */
 export function readUpToken(env: Record<string, string | undefined> = credentialEnv()): string {
   const token = env.JASKMONEY_UP_TOKEN?.trim()
   if (!token) throw new Error(`${UP_TOKEN_SETUP} (create one at https://api.up.com.au)`)
@@ -19,7 +18,6 @@ export function hasUpToken(env: Record<string, string | undefined> = credentialE
   return !!env.JASKMONEY_UP_TOKEN?.trim()
 }
 
-/** What sets sync up, for messages. */
 export const UP_TOKEN_SETUP = "Add your Up token: JASKMONEY_UP_TOKEN in ~/.jaskmoney/credentials.json or the environment"
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
@@ -57,7 +55,6 @@ function isTransaction(value: unknown): value is UpTransaction {
     relationship(r.transferAccount, "accounts") && relationship(r.category, "categories") && relationship(r.parentCategory, "categories") &&
     object(r.tags) && Array.isArray(r.tags.data) && r.tags.data.every(t => object(t) && t.type === "tags" && typeof t.id === "string")
   if (valid) {
-    // Older payloads omit these fields; normalise before claiming UpTransaction.
     a.isCategorizable ??= true
     a.roundUp ??= null
     a.cashback ??= null
@@ -84,7 +81,6 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
   fetch?: Fetch
   baseUrl?: string
   sleep?: (ms: number) => Promise<void>
-  /** How long a request may take, headers and body (tests shorten it). */
   deadlineMs?: number
 }) {
   const { normalizeError, request } = createRequest({ token, fetch, baseUrl, sleep, deadlineMs })
@@ -133,15 +129,12 @@ export function createUpClient({ token, fetch = globalThis.fetch, baseUrl = "htt
     listAccounts: () => list("accounts", isAccount),
     listTransactions: ({ since }: { since?: string } = {}) => list("transactions", isTransaction, since),
     async listAccountTransactions(accountId: string, { since }: { since?: string } = {}) {
-      // URL parsing normalises even percent-encoded dot-only path segments.
       if (accountId === "." || accountId === "..") throw new Error("Invalid Up account ID")
       return list(`accounts/${encodeURIComponent(accountId)}/transactions`, isTransaction, since)
     },
   }
 }
 
-/** createUpClient's requests: one call to Up, retried on 429, its errors
- * redacted of the token. */
 function createRequest({ token, fetch, baseUrl, sleep, deadlineMs }: { token: string; fetch: Fetch; baseUrl: string; sleep: (ms: number) => Promise<void>; deadlineMs: number }) {
   const redact = (message: string) => token ? message.split(token).join("[redacted]") : message
   function redactValue(value: unknown): unknown {
@@ -165,7 +158,6 @@ function createRequest({ token, fetch, baseUrl, sleep, deadlineMs }: { token: st
         let response: Response
         let text: string
         try {
-          // Refuse redirects so fetch cannot forward credentials to another origin.
           response = await fetch(url, { ...options, signal: controller.signal, headers: { Authorization: `Bearer ${token}`, ...(options.body === undefined ? {} : { "Content-Type": "application/json" }) }, redirect: "manual" })
           if (response.status === 429 && retry < 3) {
             void response.body?.cancel().catch(() => {})

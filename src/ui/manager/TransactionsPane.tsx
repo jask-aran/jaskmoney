@@ -9,53 +9,33 @@ import { Spinner } from "../primitives/Spinner"
 import { muted } from "../primitives/spans"
 import { truncate } from "../text"
 
-/**
- * The Transactions pane: its card, title, filter bar and the counts in its
- * bottom border, from props alone. The Manager draws it from the stores
- * (ManagerTab); the setup's tour draws the same pane over made-up rows
- * (ui/welcome/Demos). The table (or the merchant list) goes inside.
- */
-
-/** The filter bar as the pane shows it. */
 export interface FilterBarView {
-  /** Being typed (the caret shows) or applied. */
   editing: boolean
   raw: string
   caret: number
-  /** What the filter engine couldn't read. */
   err: string
   note: FilterNote | null
-  /** The filter is what a smart search wrote for this question. */
   question: string | null
-  /** ask: terms: Jev judges the rows. */
   jev: boolean
-  /** A smart search is writing the filter for the question typed. */
   writing: boolean
-  /** Opened from a chart or a category: esc goes back. */
   drillReturn: boolean
-  /** The filter in its canonical form, for the title. */
   preview: string
 }
 
-/** The bar's look, from what it is (one pure function: AGENTS.md). */
 function filterBarLook(fb: FilterBarView) {
-  // parse: searched as one phrase; check: works, but a name or field is a guess.
   const flag = fb.note?.tone === "warn" ? "check" : fb.err ? "parse" : "ok"
   const dot = flag === "check" ? tone.caution : flag === "parse" ? tone.bad : ink.note
-  // ?words being typed: a question, not a filter yet.
   const asking = fb.editing && fb.raw.trimStart().startsWith("?")
   const noteFg = fb.note?.tone === "error" ? tone.bad : fb.note?.tone === "warn" ? tone.caution : ink.note
   return { flag, dot, asking, noteFg }
 }
 
-/** The title names the filter: by its question when a smart search wrote it. */
 function filterTitle(fb: FilterBarView | null): string | undefined {
   if (fb?.question) return `[?${truncate(fb.question, 47)}]`
   if (!fb?.preview) return undefined
   return `[${truncate(fb.preview, 48)}]`
 }
 
-/** The bottom border's counts for the plain view. */
 export function rowsShown(p: { top: number; visible: number; count: number; total: number; selected: number; hidden: number; range: boolean; sort: string; ascending: boolean }): string | undefined {
   if (p.count === 0) return undefined
   const start = p.top + 1
@@ -65,7 +45,6 @@ export function rowsShown(p: { top: number; visible: number; count: number; tota
   }${p.range ? " · range" : ""} · sort ${p.sort}${p.ascending ? "↑" : "↓"}`
 }
 
-/** The bottom border's counts for the uncategorised view. */
 export function rowsToCategorise(p: { count: number; suggested: number; confident: number; suggesting: boolean; selected: number; hidden: number }): string | undefined {
   if (p.count === 0) return undefined
   return `${p.count} to categorise · ${p.suggested} suggested, ${p.confident} ≥${ACCEPT_ALL_AT * 100}%${p.suggesting ? " · suggesting…" : ""}${
@@ -76,11 +55,9 @@ export function TransactionsPane(props: {
   title: string
   filter: FilterBarView | null
   focused: boolean
-  /** The pane's width (the bar's note is cut to fit). */
   width: number
   height?: number
   flexGrow?: number
-  /** The counts in the bottom border. */
   bottom?: string
   children: JSX.Element
 }) {
@@ -109,7 +86,6 @@ function FilterBar(props: { fb: FilterBarView; width: number }) {
   const room = (used: number) => Math.max(8, props.width - 4 - used)
   return (
     <Show when={!look().asking} fallback={
-      // A question being typed: ? and the words; Jev writing it, once sent.
       <text>
         <S fg={tone.key} bold>?</S>
         <S fg={ink.figure}>{" "}</S>
@@ -131,7 +107,6 @@ function FilterBar(props: { fb: FilterBarView; width: number }) {
         </text>
       }>
         {(question: () => string) => (
-          // What a smart search wrote: the question, then its filter (yours to edit).
           <text>
             <S fg={tone.key} bold>?</S>
             <S fg={ink.figure}>{` ${question()}`}</S>

@@ -13,15 +13,11 @@ import type { Span } from "../primitives/spans"
 import { categoryRows, originCounts, originOf, type CategoryRow } from "../../state/taxonomyRows"
 import { onSettings, Line, heading, COLUMN_GAP } from "./SettingsPanes"
 
-/** A tag's scope in words: "in Holidays & Travel", "in Cafes, Takeaway",
- * with "· about" when it says what it is for. */
 function tagNote(tag: Tag, categories: Category[]): string {
   const scope = scopeText(tag, categories)
   return [scope ? `in ${scope}` : "", tag.about ? "about" : ""].filter(Boolean).join(" · ")
 }
 
-/** What a category row says beside its name: a group's size, then what
- * kind of money it holds; a subcategory only what sets it apart. */
 function categoryNote(row: CategoryRow, parentOrigin: "jaskmoney" | "up"): string {
   const c = row.category
   if (row.depth === 1) return parentOrigin === "up" && originOf(c) === "jaskmoney" ? "yours" : ""
@@ -36,8 +32,6 @@ type TaxonomyLine =
   | { kind: "category"; row: CategoryRow; index: number }
   | { kind: "tag"; tag: Tag; index: number }
 
-/** Taxonomy's two blocks of lines: the categories (Jaskmoney's, then
- * Up's, each under its heading, a blank between) and the tags. */
 function taxonomyBlocks(categories: Category[], tags: Tag[], open: readonly number[], active: boolean): { categories: TaxonomyLine[]; tags: TaxonomyLine[] } {
   const rows = categoryRows(categories, open)
   const counts = originCounts(categories)
@@ -56,22 +50,15 @@ function taxonomyBlocks(categories: Category[], tags: Tag[], open: readonly numb
   return { categories: out, tags: tagLines }
 }
 
-/** Taxonomy's columns: Categories beside Tags when the pane is wide
- * enough (j runs down the first, then the second), else one column with
- * the tags under the categories. */
 function taxonomyColumns(width: number, active: boolean): TaxonomyLine[][] {
   const blocks = taxonomyBlocks(data.state.categories, data.state.tags, ui.state.taxonomyOpen, active)
   return width - 2 >= TAXONOMY_TWO_COLUMNS ? [blocks.categories, blocks.tags] : [[...blocks.categories, { kind: "blank" }, ...blocks.tags]]
 }
-/** The inner width (borders off) from which Taxonomy has two columns. */
 const TAXONOMY_TWO_COLUMNS = 90
 
-/** Taxonomy's height: its longest column and borders, up to `room` (then it scrolls), at least 8. */
 export const taxonomyHeight = (width: number, room: number) =>
   Math.max(8, Math.min(room, Math.max(...taxonomyColumns(width, false).map((lines) => lines.length)) + 2))
 
-/** Taxonomy: Jaskmoney's categories, then Up's (groups closed until
- * opened), and the tags; each column a window that follows the cursor. */
 export function TaxonomyPane(props: { focused: boolean; width: number; height: number }) {
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "taxonomy"
   const categories = () => data.state.categories
@@ -79,7 +66,6 @@ export function TaxonomyPane(props: { focused: boolean; width: number; height: n
   const columns = createMemo(() => taxonomyColumns(props.width, active()))
   const visible = () => Math.max(3, props.height - 2)
   createEffect(() => { if (ui.state.taxonomyVisible !== visible()) ui.setState({ taxonomyVisible: visible() }) })
-  // Keep the cursors on a row as rows open, close and go.
   createEffect(() => {
     const last = Math.max(0, rows().length - 1)
     if (ui.state.categoryCursor > last) ui.setState({ categoryCursor: last })
@@ -90,11 +76,8 @@ export function TaxonomyPane(props: { focused: boolean; width: number; height: n
     line.kind === "category" ? ui.state.taxonomyList === "categories" && line.index === ui.state.categoryCursor
       : line.kind === "tag" ? ui.state.taxonomyList === "tags" && line.index === ui.state.tagCursor
         : line.kind === "empty" && ui.state.taxonomyList === line.list)
-  // The column widths: Categories takes three fifths; the rest Tags.
   const inner = () => props.width - 2
   const widths = () => columns().length === 1 ? [inner()] : (() => { const first = Math.floor((inner() - COLUMN_GAP) * 0.6); return [first, inner() - COLUMN_GAP - first] })()
-  // Each column's window moves only when the cursor would leave it; at the
-  // top it shows the first heading.
   const tops = [0, 1].map((c) => createMemo<number>((prev) => {
     const lines = columns()[c] ?? []
     if (lines.length <= visible()) return 0
@@ -110,7 +93,6 @@ export function TaxonomyPane(props: { focused: boolean; width: number; height: n
     : line.kind === "tag" ? tagNote(line.tag, categories()) : ""
   const select = (line: TaxonomyLine) => onSettings(() => {
     if (line.kind === "category") {
-      // A click on the row at the cursor opens or closes its group.
       if (isCursor(line) && line.row.children) {
         const open = ui.state.taxonomyOpen.filter((id) => id !== line.row.category.id)
         ui.setState({ taxonomyOpen: line.row.open ? open : [...open, line.row.category.id] })
@@ -136,7 +118,6 @@ export function TaxonomyPane(props: { focused: boolean; width: number; height: n
   </SectionCard>
 }
 
-/** What a Taxonomy column reads from its pane. */
 interface TaxonomyView {
   columns: () => TaxonomyLine[][]
   widths: () => number[]
@@ -148,12 +129,10 @@ interface TaxonomyView {
   select: (line: TaxonomyLine) => ReturnType<typeof onSettings>
 }
 
-/** One of Taxonomy's columns: the window of its lines at its top. */
 function TaxonomyColumn(col: { index: number; pane: TaxonomyView }) {
   const { columns, widths, inner, top, visible, isCursor, note, select } = col.pane
   const lines = () => columns()[col.index] ?? []
   const width = () => (widths()[col.index] ?? inner()) - 2
-  // Names in a column as wide as the longest shown, the notes just after.
   const NAME = createMemo(() => Math.min(width() - 8, Math.max(12, ...lines().map((line) =>
     line.kind === "category" ? (line.row.depth ? 6 : 4) + line.row.category.name.length : line.kind === "tag" ? 2 + line.tag.name.length : 0))))
   const NOTE = createMemo(() => Math.max(0, Math.min(width() - NAME() - 2, Math.max(0, ...lines().map((line) => note(line).length)))))

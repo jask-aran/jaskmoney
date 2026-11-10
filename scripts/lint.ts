@@ -1,37 +1,3 @@
-/**
- * The size budget: the app and its tests can't keep growing. The limits
- * (scripts/sizeBudget.json) are about 20% over the sizes on 2026-11-08,
- * after the tests were cut to a third. Lines are non-blank lines;
- * characters non-whitespace ones (so lines can't be packed to dodge the
- * counts). `bun run lint` runs it (and `typecheck` and `test` first).
- *
- * The rules:
- *   1. Totals: tests (count, files, lines, characters), source (files,
- *      lines, characters), dependencies.
- *   2. Areas: each folder under src/ (and scripts/) has its own lines.
- *   3. Files: at most `fileLines` lines; the files past it then are held
- *      at about their size (frozenFiles) and may only shrink.
- *   4. Functions: at most `functionLines` lines; the same for the ones
- *      past it (frozenFunctions).
- *   5. Unused exports: an export nothing else names is dead (or should be
- *      local). At most `unusedExports` of them (the count then): it may
- *      only fall.
- *   6. Repeated code: runs of WINDOW lines that appear twice or more. At
- *      most `repeats` of them (the count then): it may only fall.
- *   7. Layout: no folder under src/ beyond `areas`'.
- *   8. Ratchet: a limit more than 30% above its size is lowered to 20%
- *      above it (the two counts: to what's left), and a held file or
- *      function to its size (`--ratchet` writes the file): what's cut
- *      stays cut. Until it's run, the lint fails.
- *
- * Over a limit: stop, and tell the owner the codebase needs cutting.
- * Never raise a limit to make room.
- *
- *   bun run lint             check
- *   bun run lint --report    the refactoring targets: biggest files and
- *                            functions, repeated code, unused exports
- *   bun run lint --ratchet   lower the limits that have room to spare
- */
 import ts from "typescript"
 
 const BUDGET_PATH = "scripts/sizeBudget.json"
@@ -53,9 +19,7 @@ const CODE = /\.(ts|tsx|js|jsx|css)$/
 const TEST = /\.test\.(ts|tsx)$/
 const TS = /\.(ts|tsx)$/
 const TEST_CALL = /^\s*(test|it)(\.\w+)?\s*\(/gm
-/** Files run directly, not imported: their exports need no importer. */
 const ENTRY = /^(scripts\/|src\/index\.tsx$|src\/cli\.ts$|src\/server\/main\.ts$|src\/bench\/|src\/eval\/(run|search)\.ts$|src\/testSetup\.ts$)/
-/** Lines in a repeated run. */
 const WINDOW = 8
 const RATCHET_SLACK = 1.3
 const HEADROOM = 1.2
@@ -71,7 +35,6 @@ for (const path of paths) {
 const nonBlank = (text: string) => text.split("\n").filter((l) => l.trim() !== "").length
 const areaOf = (path: string) => (path.startsWith("scripts/") ? "scripts" : path.split("/").length > 2 ? `src/${path.split("/")[1]}` : "src")
 
-// 1–3: totals, areas, files.
 const tests = { count: 0, files: 0, lines: 0, chars: 0 }
 const source = { files: 0, lines: 0, chars: 0 }
 const areas: Record<string, number> = {}
@@ -91,7 +54,6 @@ for (const [path, text] of texts) {
 const pkg = await Bun.file("package.json").json()
 const dependencies = Object.keys(pkg.dependencies ?? {}).length + Object.keys(pkg.devDependencies ?? {}).length
 
-// 4–5: functions and exports, from the syntax tree.
 const functions: Array<[string, number]> = []
 const exported = new Map<string, Set<string>>()
 for (const [path, text] of texts) {
@@ -121,7 +83,6 @@ for (const [path, text] of texts) {
   visit(file)
   exported.set(path, names)
 }
-// An export is used when another file names it (an import, a re-export).
 const words = new Map<string, number>()
 for (const text of texts.values()) for (const w of new Set(text.match(/[A-Za-z_$][\w$]*/g) ?? [])) words.set(w, (words.get(w) ?? 0) + 1)
 const unused: string[] = []
@@ -131,8 +92,6 @@ for (const [path, names] of exported) {
   for (const name of names) if ((words.get(name) ?? 0) - (own.has(name) ? 1 : 0) <= 0) unused.push(`${path}: ${name}`)
 }
 
-// 6: repeated code. Each run of WINDOW significant lines (trimmed, past
-// imports, comments and closers), wherever it appears twice or more.
 const runs = new Map<string, string[]>()
 for (const [path, text] of texts) {
   if (TEST.test(path)) continue
@@ -147,11 +106,9 @@ for (const [path, text] of texts) {
 const repeated = [...runs.values()].filter((at) => at.length > 1)
 const repeats = repeated.length
 
-// 7: layout.
 const folders = new Set(Object.keys(areas))
 
 if (process.argv.includes("--measure")) {
-  // The sizes now, as a budget would hold them (to set a baseline).
   console.log(JSON.stringify({ tests, source, dependencies, areas, unused: unused.length, repeats,
     files: Object.fromEntries(fileLines.filter(([, n]) => n > budget.fileLines)),
     functions: Object.fromEntries(functions.filter(([, n]) => n > budget.functionLines)) }))
@@ -161,8 +118,6 @@ const report = process.argv.includes("--report")
 const ratchet = process.argv.includes("--ratchet")
 const errors: string[] = []
 const lower: string[] = []
-// `strict`: a count that may only fall (unused exports, repeats): it's
-// lowered to what's left, not to 20% over it.
 const check = (what: string, now: number, limit: number, cut: string, set?: (n: number) => void, strict = false) => {
   const to = strict ? now : Math.ceil(now * HEADROOM)
   if (now > limit) errors.push(`${what}: ${now.toLocaleString()} is over its limit of ${limit.toLocaleString()}. ${cut}`)
@@ -182,8 +137,6 @@ for (const [area, lines] of Object.entries(areas)) {
   check(`${area} lines`, lines, budget.areas[area]!, `Cut code in ${area}.`, (n) => (budget.areas[area] = n))
 }
 for (const area of Object.keys(budget.areas)) if (!folders.has(area) && ratchet) delete budget.areas[area]
-// Files and functions past the usual limit are held where they were; one
-// that's shrunk is held lower, and one back under it loses its entry.
 const held = (kind: string, sizes: Array<[string, number]>, usual: number, frozen: Record<string, number>, cut: string) => {
   for (const [id, lines] of sizes) {
     const limit = frozen[id] ?? usual
@@ -207,7 +160,6 @@ if (report) {
   for (const [p, n] of top([...functions].sort((a, b) => b[1] - a[1]), 30)) console.log(`  ${String(n).padStart(5)}  ${p}`)
   console.log("\nLines by area:")
   for (const [a, n] of Object.entries(areas).sort((x, y) => y[1] - x[1])) console.log(`  ${String(n).padStart(6)}  ${a}`)
-  // Repeats grouped by the files they join, the biggest groups first.
   const byFiles = new Map<string, { windows: number; at: string[] }>()
   for (const at of repeated) {
     const key = [...new Set(at.map((a) => a.replace(/:\d+$/, "")))].sort().join(" + ")

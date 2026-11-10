@@ -3,8 +3,6 @@ import { data } from "../../state/dataStore"
 import { ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
 
-/** Tabs stay mounted; a hidden Overview holds its charts and catches up
- * when shown again. */
 test("the Overview, hidden while the range changes, shows the new range when back", async () => {
   const t = await renderApp({ width: 140, height: 44 })
   data.init(":memory:")

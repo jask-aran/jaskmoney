@@ -11,7 +11,6 @@ test("history settles a merchant only with three or more earlier rows nearly all
   const three = [evidence(1, 1), evidence(2, 1), evidence(3, 1)]
   expect(historySuggestions([target(), ...three], categories)).toEqual([{ transactionId: 10, categoryId: 1, confidence: 3 / 4, source: "history", ranked: [{ categoryId: 1, confidence: 3 / 4 }] }])
   expect(historySuggestions([target(), ...three.slice(0, 2)], categories)).toEqual([])
-  // 3 of 4 is not nearly all: Clef decides, with the history as context.
   expect(historySuggestions([target(), ...three, evidence(4, 2)], categories)).toEqual([])
   const ten = Array.from({ length: 10 }, (_, i) => evidence(i + 20, 1))
   expect(historySuggestions([target(), ...ten], categories)[0]?.confidence).toBe(10 / 11)

@@ -39,8 +39,6 @@ type Draft = UiState["settingsDraft"]
 type EditorContext = Parameters<typeof editorFields>[2]
 type EditorPicker = NonNullable<NonNullable<UiState["settingsEditor"]>["picker"]>
 
-/** A picker field's list: arrows move, printable keys filter, enter
- * chooses (or toggles, for a multi-choice field), esc closes. */
 function settingsEditorPicker(ui: UiStore, key: KeyEvent, kind: SettingsEditorKind, field: FormField, draft: Draft, ctx: EditorContext, picker: EditorPicker): void {
   const choices = pickerChoices(pickerItems(kind, field.key, ctx, picker.query))
   queryPickerKey(key, picker, choices.length, {
@@ -50,7 +48,6 @@ function settingsEditorPicker(ui: UiStore, key: KeyEvent, kind: SettingsEditorKi
       const choice = choices[picker.cursor]
       if (!choice) return
       if (field.multi) {
-        // Multi-choice (a rule's tags, a tag's categories): enter toggles; esc closes.
         const id = Number(choice.value)
         const multiKey = field.key as "addTagIds" | "categoryIds"
         const ids = draft[multiKey]
@@ -63,7 +60,6 @@ function settingsEditorPicker(ui: UiStore, key: KeyEvent, kind: SettingsEditorKi
   })
 }
 
-/** Save the editor's draft as its kind's record, then close; a bad draft throws. */
 async function saveSettingsEditor(ui: UiStore, kind: SettingsEditorKind, id: number | string | null, draft: Draft, ctx: EditorContext, opened: Opening<NonNullable<UiState["settingsEditor"]>>, data?: DataStore): Promise<void> {
   try {
     if (kind === "category") {
@@ -81,20 +77,15 @@ async function saveSettingsEditor(ui: UiStore, kind: SettingsEditorKind, id: num
       const cycle = cycleFromDraft(draft)
       if (typeof cycle === "string") throw new Error(cycle)
       const current = data?.state.budgetCycle
-      // The cycle is shared by every budget; save it first so a bad date
-      // stops the whole edit.
       if (current && (current.unit !== cycle.unit || current.anchor !== cycle.anchor || current.anchorDate !== cycle.anchorDate || !!current.payEarly !== !!cycle.payEarly)) await data?.setBudgetCycle(cycle)
-      // From the cycle the Budgets tab shows (this one elsewhere).
       const view = data ? viewedBudgets(ui, data) : undefined
       const editing = view?.budgets.find((b) => b.id === id)
-      // A new scope ends the old budget in the same write.
       await data?.setBudget(option.scope, amount, view?.cycle.start, editing?.scope)
     } else if (kind === "cycle") {
       const cycle = cycleFromDraft(draft)
       if (typeof cycle === "string") throw new Error(cycle)
       await data?.setBudgetCycle(cycle)
     } else if (kind === "pay") {
-      // Empty clears it (0: not set).
       const amount = draft.amount.trim() ? amountFromText(draft.amount) : 0
       if (amount === null || amount < 0) throw new Error("enter what you expect each payday")
       await data?.saveUiPrefs({ expectedPay: amount })
@@ -123,8 +114,6 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   const fieldIndex = Math.min(ui.state.settingsEditor!.field, fields.length - 1)
   const field = fields[fieldIndex]!
 
-  // A picker field's list owns input until it closes (like the category
-  // picker: arrows move, printable keys filter).
   const picker = ui.state.settingsEditor!.picker
   if (picker) {
     settingsEditorPicker(ui, key, kind, field, draft, ctx, picker)
@@ -142,15 +131,12 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   if (name === "down" || (!isText && name === "j")) { move(1); return }
   if (name === "up" || (!isText && name === "k")) { move(-1); return }
   if ((name === "return" || name === "enter") && field.kind === "picker") {
-    // Open the list on the current value.
     const current = draft[field.key]
     const at = field.multi ? 0 : pickerChoices(pickerItems(kind, field.key, ctx, "")).findIndex((c) => c.value === current)
     ui.setState("settingsEditor", { picker: { query: "", cursor: Math.max(0, at) } })
     return
   }
   if (name === "return" || name === "enter") {
-    // One save at a time: over a socket the editor stays open until the
-    // core answers, and a second enter would create the record twice.
     opened.patch({ saving: true })
     settleData(ui, saveSettingsEditor(ui, kind, id, draft, ctx, opened, data))
     return
@@ -160,7 +146,6 @@ function handleSettingsEditor(ui: UiStore, key: KeyEvent, data?: DataStore): voi
   if ((left || right) && field.kind === "choice" && field.choices) {
     const previousUnit = draft.unit
     ui.setState("settingsDraft", field.key as "unit", stepChoice(field.choices, draft[field.key] as string, left ? -1 : 1) as never)
-    // A new unit or start asks for the start in its own form.
     if (field.key === "unit" || field.key === "anchor") ui.setState("settingsDraft", normaliseCycleDraft(ui.state.settingsDraft, previousUnit))
     return
   }
@@ -190,12 +175,9 @@ function handleSettings(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     })())
     return
   }
-  // One stop per pane: Saved filters shares Rules' pane, and its stop.
   const sections = SETTINGS_SECTIONS
   const current = ui.state.settingsSection === "filters" ? "rules" : ui.state.settingsSection
   const go = (next: SettingsSection) => ui.setState({ settingsSection: next, taxonomyList: "categories", focusedSection: settingsSectionFocus(next) })
-  // h/l: the pane beside it on screen (panes sit side by side within a
-  // column too); before the panes are drawn, the other column's first.
   if (name === "h" || name === "left" || name === "l" || name === "right") {
     const left = name === "h" || name === "left"
     const regions = regionRects("settings")
@@ -227,8 +209,6 @@ function handleSettingsTaxonomy(ui: UiStore, key: KeyEvent, data?: DataStore): v
   }
   const row = list === "categories" ? rows[Math.min(ui.state.categoryCursor, rows.length - 1)] : undefined
   const item = list === "categories" ? row?.category : tags[Math.min(ui.state.tagCursor, tags.length - 1)]
-  // A group opens and closes on space or enter, l and h; h on a
-  // subcategory closes its group, the cursor back on the group.
   if (row && row.children && (name === "space" || name === "return" || name === "enter")) { setGroupOpen(ui, row.category.id, !row.open); return }
   if (row && row.children && (name === "l" || name === "right")) { setGroupOpen(ui, row.category.id, true); return }
   if (row && (name === "h" || name === "left")) {
@@ -278,9 +258,6 @@ function handleSettingsFilters(ui: UiStore, key: KeyEvent, data?: DataStore): vo
   if ((name === "delete" || name === "backspace") && filter) { confirmTwice(ui, data, { kind: "filter", id: filter.id, label: filter.name, with: "delete" }); return }
 }
 
-/** Appearance input matrix: navigation changes only its cursor; enter changes
- * its row's preference; esc leaves the pane and keeps the cursor. Modal scopes
- * take precedence in activeScope. Display rows moved here by request. */
 function handleSettingsAppearance(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (name === "escape") { ui.leaveSettings(); return }
@@ -318,7 +295,6 @@ function handleSettingsDatabase(ui: UiStore, key: KeyEvent, data?: DataStore): v
     }
     case "history": ui.setState({ importHistory: { top: 0 } }); return
     case "profiles": ui.beginImport("", []); ui.opening("importWizard").patch({ stage: "profile", managing: true }); return
-    // Approved port deviation: Database & Import owns the week toggle.
     case "weekStart": if (data) toggleWeekStart(ui, data); return
     case "demo": if (data) toggleDemo(ui, data); return
     case "clearData": confirmTwice(ui, data, { kind: "clearData", id: 0, label: "all transaction and import data", with: "enter" }); return

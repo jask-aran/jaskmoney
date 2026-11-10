@@ -1,26 +1,10 @@
 #!/usr/bin/env bash
-# Installs the `jaskmoney` command, on any platform; run it again (or
-# `jaskmoney upgrade`) to update.
-#
-#   curl -fsSL https://raw.githubusercontent.com/jask-aran/jaskmoney/main/scripts/install.sh | bash
-#
-# On Linux x64 it downloads the latest release's binary. Elsewhere (macOS,
-# Linux arm64), or with JASKMONEY_FROM_SOURCE=1, it builds main from source,
-# downloaded as a tarball (no git needed), with Bun: yours if it's the tested
-# version (package.json) or newer, else it offers to install that version.
-# The source is kept in JASKMONEY_SRC (default ~/.local/share/jaskmoney);
-# JASKMONEY_BIN (default ~/.local/bin) gets the command; JASKMONEY_FORCE=1
-# reinstalls the release when it's the one installed. Questions are asked
-# on the terminal; with none (CI), every answer is yes.
 set -euo pipefail
 
 TARBALL="https://github.com/jask-aran/jaskmoney/archive/refs/heads/main.tar.gz"
 SRC="${JASKMONEY_SRC:-$HOME/.local/share/jaskmoney}"
 BIN="${JASKMONEY_BIN:-$HOME/.local/bin}"
 
-# The look (after opencode's installer): a spinner while it works, the
-# bar in the app's brand pink, a green ✓ when a step is done; labels
-# muted, names and versions plain. Colour and motion only on a terminal.
 MUTED='' PINK='' GREEN='' NC=''
 [ -t 1 ] && MUTED='\033[2m' PINK='\033[38;2;245;194;231m' GREEN='\033[38;2;166;227;161m' NC='\033[0m'
 FRAMES=(◒ ◐ ◓ ◑)
@@ -30,8 +14,6 @@ fail() { printf 'jaskmoney install: %s\n' "$*" >&2; exit 1; }
 cursor() { [ -t 1 ] && printf "\033[?25$1" || true; }
 trap 'cursor h' EXIT
 
-# Runs the rest with a spinner and $1 beside it, cleared when it's done;
-# its output in SPUN.
 spin() {
   local text=$1 out status=0 i=0; shift
   out="$(mktemp)"
@@ -49,13 +31,8 @@ spin() {
 }
 command -v curl >/dev/null || fail "needs curl"
 
-# The welcome screen's wordmark (src/ui/welcome/header.ts): its block
-# letters in pink drifting to lavender, a sheen swept across them once on a
-# terminal. Drawn from ASCII (F █, u ▀, l ▄) so it doesn't hang on the locale.
 WORDMARK=("  F luF Fu Flu FuluF FuF Fl F Fuu FlF" "FlF FuF lF F F F u F FlF F uF FFl  F ")
-# mix <r g b> <r g b> <per mille>: into R G B (no subshell: it's per cell).
 mix() { R=$(( $1 + ($4 - $1) * $7 / 1000 )) G=$(( $2 + ($5 - $2) * $7 / 1000 )) B=$(( $3 + ($6 - $3) * $7 / 1000 )); }
-# One row of the wordmark into ROW, with the sheen at column $2 (thousandths).
 wordmark_row() {
   local text=${WORDMARK[$1]} n=${#WORDMARK[0]} x ch glyph d core glow lit
   ROW="  "
@@ -87,7 +64,6 @@ wordmark() {
   echo; cursor h
 }
 
-# A yes/no question, on the terminal: the script itself is on stdin. Enter is yes.
 ask() {
   local answer
   { : </dev/tty; } 2>/dev/null || return 0
@@ -96,7 +72,6 @@ ask() {
   case "$answer" in [nN]*) return 1 ;; *) return 0 ;; esac
 }
 
-# The startup file of your shell, where PATH is set.
 rc_file() {
   case "$(basename "${SHELL:-}")" in
     zsh) echo "${ZDOTDIR:-$HOME}/.zshrc" ;;
@@ -106,7 +81,6 @@ rc_file() {
   esac
 }
 
-# Offers to put BIN on PATH, then says how to start.
 finish() {
   ok "${1:-Installed}" "$BIN/jaskmoney"
   how_to_run
@@ -131,8 +105,6 @@ how_to_run() {
   fi
 }
 
-# Downloads $1 to $2 with a bar on the terminal (stderr), from curl's bytes
-# so far against the file's size ($3); quietly anywhere else.
 download() {
   if ! [ -t 1 ] || [ -z "$3" ]; then curl -fsSL -o "$2" "$1"; return; fi
   cursor l
@@ -146,7 +118,6 @@ download() {
   printf '\n'; cursor h
   return "$status"
 }
-# bar <mark> <bytes> <of>
 bar() {
   local width=40 percent=$(( $2 * 100 / $3 ))
   local on=$(( percent * width / 100 )) filled empty
@@ -155,9 +126,6 @@ bar() {
     "$(( $2 / 1000000 ))" "$(( $3 / 1000000 ))"
 }
 
-# Linux x64: the latest release's binary, gzipped (less than half the size;
-# the plain one from a release made before there was one), checked to run,
-# then renamed over the old one (a running jaskmoney keeps its file).
 if [ -z "${JASKMONEY_FROM_SOURCE:-}" ] && [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
   wordmark
   releases="https://github.com/jask-aran/jaskmoney/releases"
@@ -192,8 +160,6 @@ if [ -z "${JASKMONEY_FROM_SOURCE:-}" ] && [ "$(uname -s)-$(uname -m)" = "Linux-x
   exit 0
 fi
 
-# Anywhere else: build main from source. A fresh copy each time, kept until
-# the new one is unpacked.
 say "Downloading the source"
 mkdir -p "$SRC"
 rm -rf "$SRC/repo.new" && mkdir "$SRC/repo.new"
@@ -201,7 +167,6 @@ curl -fsSL "$TARBALL" | tar -xz -C "$SRC/repo.new" --strip-components 1
 rm -rf "$SRC/repo" && mv "$SRC/repo.new" "$SRC/repo"
 cd "$SRC/repo"
 
-# Bun: the tested version (package.json "packageManager") or newer.
 need="$(sed -n 's/.*"packageManager": *"bun@\([0-9.]*\)".*/\1/p' package.json)"
 [ -n "$need" ] || fail "can't read the Bun version from package.json"
 new_enough() { "$1" -e "process.exit(Bun.semver.order(Bun.version, '$need') < 0 ? 1 : 0)" 2>/dev/null; }

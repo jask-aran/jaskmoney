@@ -31,16 +31,12 @@ const answers = (a: { period?: string; flow?: string; payee?: number; category?:
 describe("smart search", () => {
   test("words name a category, a payee, or something for Jev to judge rows by", () => {
     const parse = (words: string, a: Parameters<typeof answers>[0] = {}) => parsedSearch(values({ words }), answers(a), categories, words, TODAY)
-    // Every word is a whole word of one category's name.
     expect(parse("groceries")).toMatchObject({ words: null, ask: null, categoryId: 4 })
     expect(parse("restaurants")).toMatchObject({ categoryId: 2 })
-    // A payee is found in the description, even when it reads like a category.
     expect(parse("amazon", { payee: 0.7 })).toMatchObject({ words: "amazon", ask: null, categoryId: null })
     expect(parse("groceries", { payee: 0.9 })).toMatchObject({ words: "groceries", categoryId: null })
-    // A kind of thing no category names: Jev judges rows.
     expect(parse("coffee", { category: "c2" })).toMatchObject({ words: null, ask: "coffee", categoryId: null })
     expect(parse("eating out")).toMatchObject({ ask: "eating out", categoryId: null })
-    // No words, no category, whatever Jev picked.
     expect(parsedSearch(values({}), answers({ category: "c2" }), categories, "", TODAY)).toMatchObject({ words: null, ask: null, categoryId: null })
   })
 
@@ -90,7 +86,6 @@ describe("smart search", () => {
 
 describe("broad searches go to the categories they cover", () => {
   const noul = (p: number): JevAnswer => ({ type: "noul", noul: p })
-  /** Jev's coverage answers: category id → [kind, every]. */
   const covers = (scores: Record<number, [number, number]>) =>
     Object.fromEntries(Object.entries(scores).flatMap(([id, [kind, every]]) => [[`kind${id}`, noul(kind)], [`every${id}`, noul(every)]]))
 
@@ -100,9 +95,7 @@ describe("broad searches go to the categories they cover", () => {
     const expr = searchFilter(broad, ctx)
     expect(expr).toBe('(cat:"Restaurants & Cafes" OR cat:"Takeaway" OR (cat:"Uncategorised" AND ask:"going out")) AND type:spending')
     expect(parseFilterStrict(expr).error).toBeUndefined()
-    // A shop: desc:, never categories.
     expect(parsedSearch(values({ words: "uber" }), { ...answers({ payee: 0.9 }), ...covers({ 2: [0.8, 0.4] }) }, categories, "uber", TODAY).categories).toBeUndefined()
-    // Words naming a category take that category alone.
     expect(parsedSearch(values({ words: "groceries" }), { ...answers({}), ...covers({ 2: [0.8, 0.4] }) }, categories, "groceries", TODAY)).toMatchObject({ categoryId: 4 })
     expect(parsedSearch(values({ words: "groceries" }), { ...answers({}), ...covers({ 2: [0.8, 0.4] }) }, categories, "groceries", TODAY).categories).toBeUndefined()
   })

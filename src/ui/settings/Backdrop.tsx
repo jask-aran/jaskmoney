@@ -9,17 +9,8 @@ import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 import { DEFAULT_BACKDROP, backdropLines, keepSameLines, type BackdropId } from "../welcome/backdrop"
 import { BACKDROP_INK } from "../welcome/Welcome"
 
-/** A frame of the backdrop: as the setup's (welcome/Welcome FRAME_MS). */
 const FRAME_MS = 80
 
-/**
- * The setup's backdrop (Settings › Appearance › Welcome backdrop) behind
- * Settings' panes: faint money marks drifting in the gaps between them and
- * the room below. It moves only while Settings is the tab in view and the
- * setup isn't open over it; otherwise its clock stops. The ticker tape asks
- * for real prices as the setup's does (app/welcome sources), every two
- * minutes while it shows.
- */
 export function SettingsBackdrop() {
   const dims = useTerminalDimensions()
   const shown = () => ui.state.activeTab === "settings" && !ui.state.welcome
@@ -39,10 +30,8 @@ export function SettingsBackdrop() {
     const timer = setInterval(() => void ask(), 120_000)
     onCleanup(() => { stopped = true; clearInterval(timer) })
   })
-  // Seconds since this backdrop began: a new one starts from its beginning.
   const since = createMemo(on(id, () => untrack(now) / 1000))
   const height = () => Math.max(1, dims().height - 4)
-  // Lines as they were stay the same lines: only what moved is drawn again.
   let drawn: StyledSpan[][] = []
   const lines = createMemo(() => (drawn = keepSameLines(drawn, backdropLines(id(), dims().width, height(), now() / 1000 - since(), BACKDROP_INK, tickers()))))
   return (

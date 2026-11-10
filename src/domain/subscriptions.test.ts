@@ -9,10 +9,10 @@ const monthly = (description: string, amounts: number[], from = "2026-05-03") =>
 
 test("monthly cost, next charge, a recent price change, and active before stopped", () => {
   const rows = [
-    ...monthly("NETFLIX", [18.99, 18.99, 22.99, 22.99, 22.99]),            // May–Sep, rose in Jul
-    ...monthly("GYM", [60, 60, 60]),                                         // May–Jul: stopped (Aug, Sep missed)
-    ...[0, 1, 2, 3, 4, 5, 6, 7].map((w) => charge("COFFEE CLUB", `2026-${w < 4 ? "08" : "09"}-${String(1 + (w % 4) * 7).padStart(2, "0")}`, 5)), // weekly
-    ...monthly("OLD THING", [9, 9, 9], "2025-01-10"),                         // stopped long ago: gone
+    ...monthly("NETFLIX", [18.99, 18.99, 22.99, 22.99, 22.99]),
+    ...monthly("GYM", [60, 60, 60]),
+    ...[0, 1, 2, 3, 4, 5, 6, 7].map((w) => charge("COFFEE CLUB", `2026-${w < 4 ? "08" : "09"}-${String(1 + (w % 4) * 7).padStart(2, "0")}`, 5)),
+    ...monthly("OLD THING", [9, 9, 9], "2025-01-10"),
   ]
   const list = subscriptions(rows, "2026-09-20")
   expect(list.map((s) => s.name)).toEqual(["NETFLIX", "COFFEE CLUB", "GYM"])

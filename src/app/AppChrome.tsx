@@ -18,7 +18,6 @@ import { selectionLabel } from "../domain/accountTree"
 import { JumpOverlay, MerchantNoteBox, SavedFilterPicker, SearchHelp, TagChooser, TagPicker } from "../ui/primitives/Dialogs"
 
 export function AppBar(props: { syncLabel: () => string }) {
-  // The Manager's account selection; the other tabs are not account-scoped.
   const accountLabel = () => {
     if (data.state.accounts.length === 0) return "No accounts"
     return ui.state.activeTab === "manager" ? selectionLabel(data.state.accounts, data.state.accountSelection) : ""
@@ -29,8 +28,6 @@ export function AppBar(props: { syncLabel: () => string }) {
       items={[
         { text: data.state.demo ? "DEMO" : "" },
         { text: accountLabel() },
-        // The version, in the good tone when a newer one is out; pointed
-        // at (mouse or cursor) it checks and says.
         { id: "bar.version", text: versionLabel(), fg: updateAvailable() ? tone.good : undefined, onHover: () => void showVersion(ui) },
         { id: "bar.sync", text: data.state.demo ? "" : props.syncLabel() },
       ]}
@@ -39,8 +36,6 @@ export function AppBar(props: { syncLabel: () => string }) {
   )
 }
 
-/** Everything drawn over the app: the Up mark, jump mode, the pickers,
- * dialogs and overlays, the setup and the command palette. */
 export function Overlays(props: { paletteCommands: Accessor<ReturnType<typeof paletteList>> }) {
   return (
     <>

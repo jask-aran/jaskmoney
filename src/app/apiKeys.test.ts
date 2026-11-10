@@ -14,7 +14,6 @@ import { startLlmSignIn } from "./llmSignIn"
 
 const KEY = "apikey_27825a25560c4f14cbb9ab1b8762d8ce13a_test9999"
 
-/** Settings › AI models focused on `row`; no keys, no network. */
 function setup(row = 0) {
   const network = spyOn(globalThis, "fetch").mockImplementation(Object.assign(() => { throw new Error("network is forbidden") }, { preconnect: globalThis.fetch.preconnect }))
   onTestFinished(() => { try { expect(network).not.toHaveBeenCalled() } finally { network.mockRestore() } })
@@ -27,7 +26,6 @@ function setup(row = 0) {
 afterEach(() => { rmSync(credentialsPath(), { force: true }); rmSync(oauthPath(), { force: true }) })
 
 const actions = () => aiActions(ui.state.aiDialog!.row, aiContext(data)).map((a) => a.id)
-/** Move the dialog's cursor to an action and press enter. */
 function choose(action: string) {
   const at = actions().indexOf(action as never)
   expect(at).toBeGreaterThanOrEqual(0)
@@ -46,10 +44,8 @@ test("a key: typed or pasted into the dialog, saved owner-only, used before .env
   expect(ui.state.aiDialog!.field).toBeNull()
   expect(ui.state.aiDialog!.note?.ok).toBe(true)
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_JEV_TOKEN: KEY })
-  // Where it comes from, and not one character of it.
   expect(data.state.apiKeys.JASKMONEY_JEV_TOKEN).toEqual({ source: "saved", mask: "" })
   expect(actions()).toEqual(["key", "test", "remove"])
-  // An empty key leaves the saved one.
   choose("key")
   handleKey(ui, key("return"), data)
   expect(loadSavedCredentials()).toEqual({ JASKMONEY_JEV_TOKEN: KEY })
@@ -66,10 +62,8 @@ test("Workers AI: a token and an account id, each its own action", async () => {
   handleKey(ui, key("return"), data)
   expect(actions()).toEqual(["key", "page", "accountId"])
   choose("key"); handlePaste(ui, KEY, data); handleKey(ui, key("return"), data); await settlePending()
-  // The token's account is found from it (testSetup's made-up one) …
   expect(ui.state.aiDialog!.note?.ok).toBe(true)
   expect(loadSavedCredentials()).toMatchObject({ JASKMONEY_CF_ACCOUNT_ID: "acct-test" })
-  // … and can still be entered by hand.
   choose("accountId")
   expect(ui.state.aiDialog!.field).toMatchObject({ action: "accountId", value: "acct-test" })
   handleKey(ui, key("u", { ctrl: true }), data); handlePaste(ui, "acct-for-test", data); handleKey(ui, key("return"), data); await settlePending()

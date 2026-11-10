@@ -2,29 +2,17 @@ import { scopeKey } from "./budgetScopes"
 import { budgetsIn, cycleAt, cycleFor, cycleSpending, pastCycles, spendByGroup, type Budget, type BudgetHistoryEntry, type Cycle, type CycleConfig } from "./budget"
 import type { Account, Category, Transaction } from "./types"
 
-/** One line of the Budgets tab's category list. */
 export interface BudgetLine {
-  /** null: uncategorised (it can't have a budget). */
   categoryId: number | null
   name: string
   color: string | null
-  /** Spent this cycle so far. */
   now: number
-  /** Average over the cycles before (up to `averageOver`, from the first data). */
   average: number
-  /** The whole cycle before, or null before the first data. */
   last: number | null
-  /** The category's budget, if it has one. */
   budget: Budget | null
-  /** A category inside a group (drawn indented under it). */
   child: boolean
 }
 
-/**
- * This cycle's spending by category against the average of the cycles
- * before: each group with spending now or before (biggest now first), then
- * the categories in it the same way. Uncategorised is a group of its own.
- */
 export function budgetCategoryLines(
   config: CycleConfig, todayISO: string, accounts: Account[], categories: Category[],
   budgets: Budget[], transactions: Transaction[], averageOver = 3,
@@ -57,28 +45,19 @@ export function budgetCategoryLines(
     .map((c) => line(c.id, catNow.get(c.id) ?? 0, average(catBefore, c.id), catBefore[0] ? catBefore[0].get(c.id) ?? 0 : null, true)).filter(worth).sort(order))])
 }
 
-/** What the Budgets tab shows for the cycle `offset` from today's (0 this
- * one, -1 the one before): the cycle, the day it's shown up to (today, or
- * its last day once it's over), and the budgets in force in it. */
 export function budgetView(config: CycleConfig, todayISO: string, offset: number, history: readonly BudgetHistoryEntry[], budgets: Budget[]): { cycle: Cycle; through: string; budgets: Budget[]; current: boolean } {
   const cycle = cycleAt(config, todayISO, Math.min(0, offset))
   const current = cycle.end >= todayISO
   return { cycle, through: current ? todayISO : cycle.end, budgets: current ? budgets : budgetsIn(history, budgets, cycle.start), current }
 }
 
-/** What arms a budget for deleting in the cycle `cycleStart`: its scope and
- * the cycle, as one id. */
 export const budgetArmId = (budget: Budget, cycleStart: string) => `${scopeKey(budget.scope)}@${cycleStart}`
 
-/** A row of the Budgets tab's Budgets pane: all spending (against the
- * overall spending target: its total row), an account's budget, or a
- * category, groups closed unless opened. Your pay has a key, not a row. */
 export type SetupRow =
   | { kind: "total" }
   | { kind: "account"; budget: Budget }
   | { kind: "line"; line: BudgetLine; open: boolean | null; budgeted: number }
 
-/** Group `lines` (a group, then its categories). */
 function grouped(lines: BudgetLine[]): Array<{ group: BudgetLine; children: BudgetLine[] }> {
   const groups: Array<{ group: BudgetLine; children: BudgetLine[] }> = []
   for (const l of lines) {
@@ -88,8 +67,6 @@ function grouped(lines: BudgetLine[]): Array<{ group: BudgetLine; children: Budg
   return groups
 }
 
-/** Where a new overall spending target starts: everything counted's
- * average, budgeted or not (the categories are carved from it). */
 export function overallAverage(lines: BudgetLine[], ignored: ReadonlySet<number>): number {
   const counted = (l: BudgetLine) => l.categoryId === null || !ignored.has(l.categoryId)
   return grouped(lines).reduce((sum, { group, children }) => {
@@ -98,13 +75,6 @@ export function overallAverage(lines: BudgetLine[], ignored: ReadonlySet<number>
   }, 0)
 }
 
-/**
- * The Budgets pane's rows: all spending first (the table's total, against
- * the overall spending target), then each account's budget, then each
- * group of `lines`, its categories under it only when it's in `open`;
- * `open` on a group is null when it has no categories to show, and
- * `budgeted` counts the budgets inside it (seen while it's closed).
- */
 export function budgetSetupRows(lines: BudgetLine[], open: ReadonlySet<number>, budgets: Budget[] = []): SetupRow[] {
   return [
     { kind: "total" },

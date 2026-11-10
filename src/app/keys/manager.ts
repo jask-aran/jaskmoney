@@ -47,14 +47,12 @@ function handleManagerDetail(ui: UiStore, key: KeyEvent, data?: DataStore): void
     ui.setState("detail", { notes: { draft: notes, caret: notes.length } })
     return
   }
-  // J/K scroll what it bought, when that's longer than the view shows.
   if ((name === "j" || name === "k" || name === "J" || name === "K") && (key.shift || name === "J" || name === "K")) {
     const items = data?.transactions().find((t) => t.id === (ui.state.detail?.id ?? null))?.bought?.length ?? 0
     const top = (ui.state.detail?.boughtTop ?? 0) + (name.toLowerCase() === "j" ? 1 : -1)
     ui.setState("detail", { boughtTop: Math.max(0, Math.min(top, items - BOUGHT_LINES)) })
     return
   }
-  // j/k browse neighbouring transactions without closing the view.
   if (name === "j" || name === "down" || name === "k" || name === "up") {
     const rows = data?.scopedTransactions() ?? []
     moveTxnCursor(ui, data, name === "j" || name === "down" ? 1 : -1, false)
@@ -77,20 +75,16 @@ function handleManagerAccountAction(ui: UiStore, key: KeyEvent, data?: DataStore
   }
 }
 
-/** Accept-all's preview: enter (or y) accepts those rows, esc doesn't. */
 function handleManagerAcceptPreview(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   const ids = ui.state.acceptPreview ?? []
   if (name === "escape") { ui.setState({ acceptPreview: null }); ui.setStatus("Nothing accepted"); return }
   if ((name === "return" || name === "enter" || name === "y") && data) {
     ui.setState({ acceptPreview: null })
-    // The same preview serves a tag review and the Uncategorised view.
     void (data.state.tagReview ? runTagAccept(ui, data, ids) : runAccept(ui, data, ids))
   }
 }
 
-/** R: rules offered from repeated categorisations. enter makes the cursor's,
- * x declines it for good, esc closes (offers stay). */
 function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const dialog = ui.state.ruleOffers
   if (!dialog) return
@@ -100,7 +94,6 @@ function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const close = () => opened.close()
   if (name === "escape") { close(); ui.setStatus("Transactions"); return }
   if (dialog.busy && ["return", "enter", "x"].includes(name)) return
-  // The final action row asks the general model for more rules.
   if ((name === "return" || name === "enter") && dialog.cursor === offers.length && !!data?.state.llm && data) {
     askForRules(ui, data)
     return
@@ -136,10 +129,6 @@ function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   }
 }
 
-/** esc in Transactions steps back one level (K3): the selection, then a
- * drill-down (back to Overview: its filter is the drill), then the filter,
- * then a special view (tag review, then the Uncategorised view). Approved
- * OpenTUI deviation from legacy, where u cleared and views had own keys. */
 function stepBack(ui: UiStore, data?: DataStore): void {
   if (Object.keys(ui.state.selectedIds).length || (ui.state.range != null)) { ui.clearSelection(); ui.setStatus("Selection cleared"); return }
   if (!data) return
@@ -158,15 +147,11 @@ function stepBack(ui: UiStore, data?: DataStore): void {
   ui.setStatus("Nothing to clear")
 }
 
-/** The table's rows (scopedTransactions), read once per key. */
 type Rows = ReturnType<DataStore["scopedTransactions"]>
 
-/** The table's commands: saved filters, undo, repeat, the account, merchants,
- * notes, near misses and rule offers. */
 function txnsCommandKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStore): boolean {
   const { name, sequence: seq } = key
   if (savedFilterKeys(ui, data, key)) return true
-  // u undoes the last change (dataStore.undo); esc clears, below.
   if (name === "u" && data) { runUndo(ui, data); return true }
 
   if ((name === "." || seq === ".") && data) {
@@ -175,16 +160,13 @@ function txnsCommandKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStor
     return true
   }
 
-  // Step through the accounts pane from the table.
   if (name === "a" && !key.shift && data) { stepAccount(ui, data); return true }
   if (name === "m") { ui.setState({ txnView: "merchants", merchantCursor: 0, merchantTop: 0 }); ui.setStatus("Grouped by merchant · m for rows"); return true }
-  // N: a note on the row's merchant (what you buy there), for suggestions.
   if ((name === "N" || (name === "n" && key.shift)) && data) {
     const row = data.scopedTransactions()[ui.state.managerCursor]
     if (row) openMerchantNote(ui, data, row.description)
     return true
   }
-  // With ask: terms, n shows near misses too (rows Jev hasn't settled).
   if (name === "n" && !key.shift && data && askTerms(data.state.filterExpr).length) {
     const on = !data.nearMissesShown()
     data.setAskLoose(on)
@@ -194,10 +176,8 @@ function txnsCommandKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStor
     ui.setStatus(on ? `${tally}: near misses below the matches (n hides them)` : `${tally}: matches only (n shows the near)`)
     return true
   }
-  // R: rules offered from what you've categorised the same way repeatedly.
   if (name === "r" && key.shift && data) {
     const n = data.allRuleOffers().length
-    // With a model to ask, the list opens on the final action row when empty.
     if (!n && !data?.state.llm) { ui.setStatus(`No rule to offer: one comes after you put a description in the same category ${RULE_AFTER} times`); return true }
     ui.setState({ ruleOffers: { cursor: 0, busy: false } })
     ui.setStatus(n ? `${count(n, "rule")} offered` : "No rules offered yet · enter asks the AI")
@@ -206,11 +186,8 @@ function txnsCommandKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStor
   return false
 }
 
-/** Tag review and the Uncategorised view: their candidates and suggestions. */
 function txnsReviewKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStore): boolean {
   const { name } = key
-  // Tag review: a tag's candidates, accepted (y, Y) or dismissed (x) like
-  // category suggestions; T chooses another tag, esc leaves.
   if (name === "t" && key.shift && data) { ui.setState({ tagChooser: { cursor: 0, query: "" } }); ui.setStatus("Find transactions for a tag · type to filter or name a new one"); return true }
   const review = data?.state.tagReview
   if (review && data) {
@@ -231,13 +208,10 @@ function txnsReviewKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStore
       return true
     }
   }
-  // The Uncategorised view: rows waiting for a category, with suggestions
-  // to accept (y: these rows, Y: every confident one) or dismiss (x).
   if (name === "i" && !key.shift && data) { if (review) data.closeTagReview(); toggleUncategorised(ui, data); return true }
   if (data?.state.uncategorisedOnly) {
     if (name === "y" && !key.shift) { void runAccept(ui, data, ui.targetIds(rows)); return true }
     if (name === "y" && key.shift) {
-      // Several rows, possibly pushed to Up: show what it would do first.
       const ids = rows.filter((r) => (data.state.suggestions[r.id]?.confidence ?? 0) >= ACCEPT_ALL_AT).map((r) => r.id)
       if (!ids.length) { ui.setStatus(`No suggestion is ${ACCEPT_ALL_AT * 100}% sure or more`); return true }
       ui.setState({ acceptPreview: ids })
@@ -255,7 +229,6 @@ function txnsReviewKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStore
   return false
 }
 
-/** The row's detail, search and filter, stepping back, sort, category and tag. */
 function txnsTableKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStore): boolean {
   const { name, sequence: seq } = key
   if (name === "return" || name === "enter") {
@@ -298,7 +271,6 @@ function txnsTableKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStore)
   return false
 }
 
-/** Selection (space, over a range too) and the cursor. */
 function txnsCursorKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStore): void {
   const { name, sequence: seq } = key
   if (name === "space" || seq === " ") {
@@ -348,8 +320,6 @@ function handleManagerAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): vo
   const rows = stacks.flatMap((stack) => stack.rows)
   const at = rows.findIndex((row) => row.selection === data.state.accountSelection)
   const select = (index: number) => selectAccountRow(ui, data, index)
-  // j/k move down the stacks in reading order; h/l go to the first row of
-  // the stack beside.
   const moved = listMove(key, Math.max(0, at), rows.length)
   if (moved != null) { select(moved); return }
   const step = name === "h" || name === "left" ? -1 : name === "l" || name === "right" ? 1 : 0
@@ -369,10 +339,8 @@ function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): v
   const { name, sequence: seq } = key
   if (!data) return
   if (savedFilterKeys(ui, data, key)) return
-  // u undoes the last change (dataStore.undo); esc clears, below.
   if (name === "u" && data) { runUndo(ui, data); return }
 
-  // The same filtered, scoped rows as the table, summarised per merchant.
   const groups = sortMerchantGroups(groupByMerchant(data.scopedTransactions()), ui.state.merchantSort, ui.state.merchantReverse)
   const group = groups[ui.state.merchantCursor]
   const moveTo = (i: number) => ui.setState({ merchantCursor: Math.max(0, Math.min(groups.length - 1, i)) })
@@ -390,7 +358,6 @@ function handleManagerMerchants(ui: UiStore, key: KeyEvent, data?: DataStore): v
   if (isSmartSearchKey(key)) { openSmartSearch(ui, data); return }
   if (name === "/" || seq === "/") { ui.openFilter(data.state.filterQuery); return }
   if ((name === "return" || name === "enter") && group) {
-    // Drill in: narrow the filter to this merchant and show its rows.
     const result = data.commitFilter(merchantFilter(data.state.filterQuery, group.merchant))
     if (!result.ok) { ui.setStatus(result.err, true); return }
     toTransactions(ui)
@@ -452,8 +419,6 @@ export const managerScopes = {
       { key: "c", desc: "choose", label: "Choose a category…" },
       { key: "N", desc: "merchant note", label: "Note on the merchant…", description: "what you buy there" },
       ...(state?.ruleOfferCount ? [{ key: "R", desc: `rules (${state.ruleOfferCount})`, command: "rules:offers" }] : []),
-      // The review actions first: the footer shows the first eight
-      // (footerLine), and cuts at the end on narrow screens.
       { key: "space", desc: "select" },
       { key: "esc", desc: "all rows" },
       { key: "S-j/k", desc: "range" },
@@ -465,8 +430,6 @@ export const managerScopes = {
       { key: "m", desc: "merchants" },
       { key: "v", desc: "jump" },
     ] : [
-      // The first eight show in the footer (footerLine); the rest are in
-      // the palette (ctrl+k).
       { key: "j/k", desc: "move" },
       { key: "c", desc: "category", label: "Categorise…", description: "selection or row" },
       { key: "t", desc: "tag", label: "Tag…", description: "selection or row" },

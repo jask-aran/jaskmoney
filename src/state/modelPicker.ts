@@ -1,24 +1,14 @@
 import { fuzzyScore } from "../domain/fuzzy"
 import type { PickerItem } from "./settingsForm"
 
-/**
- * The model picker (a use's "Change the model…", or a provider's dialog):
- * the provider's chat models as pi-ai's catalog has them, the recommended
- * one (the app's default) first, then the rest by maker. Typing filters by
- * id and name, best match first. No request goes to the provider: the
- * catalog is the list.
- */
 export interface ModelEntry {
   id: string
   name: string
-  /** Dollars per million tokens in and out. */
   input: number
   output: number
-  /** Tokens of context. */
   context: number
 }
 
-/** "$0.10 / $0.20 per M · 1049k" (or "free"): what a model costs and holds. */
 function modelDetail(entry: ModelEntry): string {
   const money = (n: number) => `$${n < 1 ? n.toFixed(2) : n % 1 ? n.toFixed(2) : n.toFixed(0)}`
   const price = entry.input === 0 && entry.output === 0 ? "free" : `${money(entry.input)} / ${money(entry.output)} per M`
@@ -26,7 +16,6 @@ function modelDetail(entry: ModelEntry): string {
   return `${price} · ${context}`
 }
 
-/** Who makes it: OpenRouter's ids lead with the maker ("anthropic/…"). */
 const makerOf = (id: string, fallback: string) => (id.includes("/") ? id.slice(0, id.indexOf("/")) : fallback)
 
 export function modelPickerItems(entries: readonly ModelEntry[], options: { current: string; recommended: string; query: string; maker: string }): PickerItem[] {

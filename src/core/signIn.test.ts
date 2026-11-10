@@ -24,7 +24,6 @@ test("a browser sign-in runs in the core: its address and paste prompt come to t
   expect(pasted).toBe("http://127.0.0.1:1455/auth/callback?code=abc")
   expect(data.state.signedIn.openai).toBe(true)
   expect(JSON.stringify(data.state)).not.toContain("access-for-test")
-  // Nothing waits for a paste now.
   expect(await data.signInPaste("openai", "late")).toBe(false)
   await data.signOutLlm("openai")
   expect(data.state.signedIn.openai).toBe(false)

@@ -3,11 +3,6 @@ import { executorActions } from "../state/executorDialog"
 import type { Opening, UiState, UiStore } from "../state/uiStore"
 import { openBrowser } from "./llmSignIn"
 
-/**
- * Settings › AI models › Sources › Executor: signing in to Executor Cloud in
- * the browser (or making an account there), then testing that Gmail answers
- * through it. `sources` is replaced in tests.
- */
 export const sources = {
   open: openBrowser as (url: string) => void,
   status: () => executorStatus(),
@@ -89,5 +84,4 @@ export async function runExecutorAction(ui: UiStore): Promise<void> {
   }
 }
 
-/** esc while the browser sign-in is open: stop waiting for it. */
 export function cancelExecutorSignIn(): void { signingIn?.abort() }

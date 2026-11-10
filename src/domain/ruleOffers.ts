@@ -6,39 +6,20 @@ import { dryRunRules, filterRowNames } from "./rules"
 import { groupByDescription } from "./transactionGroups"
 import type { Category, Rule, SavedFilter, Tag, Transaction } from "./types"
 
-/**
- * Turning repeated categorisations into rules. Once you've put a
- * description's rows in one category RULE_AFTER times, a rule that does it
- * on every new row is offered, if:
- * - the rule's filter (`desc:`, which matches any description containing
- *   the words) finds rows that are nearly all (RULE_SHARE) in that category
- *   already: "Coles" isn't offered when "Coles Express" rows are Fuel;
- * - no enabled rule would already categorise a new row like these;
- * - you haven't declined it.
- */
 export const RULE_AFTER = 3
 export const RULE_SHARE = 0.9
 
 export type RuleOffer = {
-  /** The description as your rows spell it most often; for an AI rule, its name. */
   description: string
   expr: string
-  /** Times you've put it in the target (AI: recent choices it covers). */
   times: number
-  /** Category target: categorised rows and agreeing rows. Tag target: all found rows and tagged rows. */
   categorised: number
   agreeing: number
-  /** Rows still waiting for the category or without the tag: the rule takes them now. */
   waiting: number[]
-  /** Other descriptions the filter finds ("Coles Express" for Coles): what
-   * else the rule will categorise. */
   others: string[]
-  /** The model's reason (AI rules). */
   why?: string
 } & ({ source: "repeat" | "ai"; categoryId: number; tagId: null } | { source: "ai"; categoryId: null; tagId: number })
 
-/** Offers among `choices` (all of them, or those for `descriptions`), most
- * chosen first. */
 export function ruleOffers(
   choices: CategoryChoice[],
   transactions: Transaction[],
@@ -51,8 +32,6 @@ export function ruleOffers(
   const only = descriptions && new Set(descriptions.map((d) => d.trim().toLowerCase()))
   const names = filterRowNames(categories, tags)
   const byKey = groupByDescription(transactions)
-  // Each row as a filter sees it, built once: per choice it was a copy of
-  // every row (choices × rows).
   let seen: { t: Transaction; row: ReturnType<typeof names.row> }[] | null = null
   const filterRows = () => (seen ??= transactions.map((t) => ({ t, row: names.row(t, t.categoryId, t.tagIds) })))
   const offers: RuleOffer[] = []
@@ -69,7 +48,6 @@ export function ruleOffers(
     const categorised = found.filter((t) => !isUncategorised(t))
     const agreeing = categorised.filter((t) => t.categoryId === choice.categoryId).length
     if (!categorised.length || agreeing / categorised.length < RULE_SHARE) continue
-    // A new row like these, with no category: would a rule already set one?
     const fresh = { ...own[0]!, id: -1, categoryId: null, tagIds: [] }
     if (dryRunRules([fresh], rules, savedFilters, categories, tags).changes.some((c) => c.categorySet)) continue
     const others = [...new Map(found.filter((t) => t.description.trim().toLowerCase() !== choice.description).map((t) => [t.description.trim().toLowerCase(), t.description.trim()])).values()].sort()

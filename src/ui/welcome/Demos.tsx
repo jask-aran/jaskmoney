@@ -19,18 +19,7 @@ import { merchantRows, trendRows } from "../../domain/periodTables"
 
 export { DEMOS }
 
-/**
- * The tour's demos drawn: the app's own Transactions pane (TransactionsPane
- * and TransactionTable, as the Manager draws them), filter engine and
- * Overview charts, on demo mode's made-up years (state/tour). Each frame
- * comes either from the demo's script, `now - startedAt` into it, or from
- * `trying`, the demo frozen and handed to you. Nothing is drawn inside the
- * pane that the app doesn't draw there: the keys the suggestions demo
- * presses show below it. Change the pane, the filter language or the
- * charts, and the demos change with them.
- */
 type ReelProps = { scene: number; startedAt: number; now: number; trying: DemoTry | null; width: number; height: number }
-/** What each demo's script is played from: the reel's props and clock. */
 interface Reel {
   props: ReelProps
   ms: () => number
@@ -41,31 +30,22 @@ interface Reel {
   bar: (raw: string, caret: number, editing: boolean, extra?: Partial<FilterBarView>) => FilterBarView
 }
 
-/** `now`: the setup's clock (performance.now() at its latest step), so a
- * demo moves in the same frames as everything else on the setup. */
 export function DemoReel(props: ReelProps) {
   const ms = () => Math.max(0, props.now - props.startedAt)
   const id = () => DEMOS[props.scene]?.id
   const world = createMemo(() => demoWorld(data.state.categories))
   const topics = createMemo(() => tourTopics(world()))
-  // The pane, and a line under it for the keys being pressed.
   const paneHeight = () => props.height - 1
   const tableWidth = () => props.width - 4
-  // Border (2), the filter bar and the column header.
   const visible = () => Math.max(3, paneHeight() - 4)
   const top = (cursor: number) => Math.max(0, cursor - visible() + 1)
 
-  /** The bar for a filter typed into the demo, read as the store reads it. */
   const bar = (raw: string, caret: number, editing: boolean, extra: Partial<FilterBarView> = {}): FilterBarView => {
     const f = demoFilter(world(), raw)
     return { editing, raw, caret, err: f.err, note: f.note, question: null, jev: false, writing: false, drillReturn: false, preview: f.preview, ...extra }
   }
   const shown = (count: number, cursor: number) => rowsShown({ top: top(cursor), visible: visible(), count, total: world().rows.length, selected: 0, hidden: 0, range: false, sort: "date", ascending: false })
 
-  // A demo's script plays only while it's the one shown, and what follows
-  // from it (its rows, the bar, the table) is worked out again only when
-  // the script's frame changes, not on every step of the clock: a frame
-  // the same as the last (by value) is the last.
   const playing = (demo: string) => id() === demo
   const reel: Reel = { props, ms, world, topics, paneHeight, playing, bar }
   const { filterRows, filterBar } = filterDemo(reel)
@@ -100,7 +80,6 @@ export function DemoReel(props: ReelProps) {
         })}>
           <TransactionTable rows={waitingRows()} top={top(suggest().state.cursor)} visible={visible()} cursor={waitingRows().length ? suggest().state.cursor : null} width={tableWidth()} showAccount={false} showTags suggestions={suggestions()} empty="Nothing to categorise" />
         </TransactionsPane>
-        {/* The row's detail, as enter opens it in the Manager: the real card. */}
         <Show when={suggest().state.detail != null ? wait().originals[suggest().state.detail!] : undefined}>
           {(row: () => Transaction) => <TransactionDetailCard row={row()} detail={null} boughtTop={0} lookup={null} notes={null} width={Math.min(props.width - 8, 96)} />}
         </Show>
@@ -110,19 +89,16 @@ export function DemoReel(props: ReelProps) {
   )
 }
 
-// ---- Filter: / then what the script types, or what you type.
 function filterDemo(reel: Reel) {
   const { props, ms, world, topics, playing, bar } = reel
   const filterText = createMemo(() => props.trying?.filter ?? (() => { const v = playing("filter") ? filterAt(ms(), topics()) : ""; return { value: v, caret: v.length } })(),
     undefined, { equals: (a, b) => a.value === b.value && a.caret === b.caret })
-  // The script presses / just before it types.
   const filterOpen = createMemo(() => !!props.trying || ms() % 13000 > 700)
   const filterRows = createMemo(() => demoFilter(world(), filterText().value).rows)
   const filterBar = createMemo(() => (filterOpen() ? bar(filterText().value, filterText().caret, true) : null))
   return { filterRows, filterBar }
 }
 
-// ---- Smart search.
 function askDemo(reel: Reel) {
   const { ms, world, topics, playing, bar } = reel
   const ask = createMemo(() => (playing("ask") ? askAt(ms(), topics()) : { raw: "", editing: false, writing: false, question: null }),
@@ -132,7 +108,6 @@ function askDemo(reel: Reel) {
   return { askRows, askBar }
 }
 
-// ---- Suggestions: the script's state, or yours.
 function suggestDemo(reel: Reel) {
   const { props, ms, world, playing } = reel
   const wait = createMemo(() => waiting(world()))
@@ -146,10 +121,6 @@ function suggestDemo(reel: Reel) {
   return { wait, suggest, waitingRows, suggestions }
 }
 
-// ---- Charts: the Overview's pane over last month (every day of it),
-// fed as the Overview feeds it: the spending accounts' rows, the range's
-// series, the calendar and the subscriptions. A memo per view, so a
-// chart is built when the view changes, not on every tick.
 function chartDemo(reel: Reel) {
   const { props, ms, world, paneHeight } = reel
   const view = createMemo(() => props.trying?.view ?? chartViewAt(ms()))
@@ -179,7 +150,6 @@ function demoOverview(w: DemoWorld) {
   }
 }
 
-/** Under the pane: keys, the one being pressed lit. */
 const keys = (list: Array<[string, string]>, pressed: string | null, note?: string | null): StyledSpan[] => [
   ...list.flatMap(([k, desc]): StyledSpan[] => [
     { text: ` ${k} `, fg: pressed === k ? theme.rowCursorText : tone.key, bg: pressed === k ? tone.key : undefined, bold: true },

@@ -3,7 +3,6 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "
 import { data } from "../state/dataStore"
 import { testEnv } from "../testing/scoped"
 
-/** CSV rows: Rent paid to "J Smith" (4, all Rent), "Transfer to Holiday" (2 Travel, 1 Rent), "Bills Co" (2). */
 function setup() {
   testEnv("JASKMONEY_OPENROUTER_TOKEN", "")
   data.init(":memory:")
@@ -45,7 +44,6 @@ test("the model's proposals are checked: only precise rules with enough rows are
   expect(offer).toMatchObject({ source: "ai", description: "Rent to J Smith", expr: 'desc:"J Smith"', categoryId: rent, agreeing: 4, categorised: 4, why: "4 of 4 categorised are rent" })
   expect(offer!.waiting).toHaveLength(1)
   expect(data.allRuleOffers()).toEqual([offer!])
-  // Made: the waiting row is categorised, the offer goes.
   await data.makeOfferedRule(offer!)
   expect(data.state.transactions.find((t) => t.id === offer!.waiting[0])?.categoryId).toBe(rent)
   expect(data.allRuleOffers()).toEqual([])

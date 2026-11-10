@@ -6,13 +6,8 @@ import type { CoreLink } from "./link"
 import type { SetStoreFunction } from "solid-js/store"
 import type { DataState } from "./store"
 
-/** Slices patched in place, so a reader of one entry reruns only when it changes. */
 const RECONCILED = new Set<keyof CoreState>(["suggestions", "merchantNotes", "merchantBreadth", "uiPrefs", "purchaseLookups"])
 
-/** The core's rows, marked as already plain. Setting a store value unwraps
- * it deeply (every field of every row, ~half of a write's cost); the core's
- * rows are fresh plain objects, never store proxies, so the marker (which
- * Solid's `unwrap` returns as is) skips that walk. Reads still wrap them. */
 function plainRows<T>(rows: T): T {
   if (Array.isArray(rows) && Object.isExtensible(rows) && !Object.prototype.hasOwnProperty.call(rows, $RAW))
     Object.defineProperty(rows, $RAW, { value: rows })
@@ -23,7 +18,6 @@ export function createMirror(initialLink: CoreLink, state: DataState, setState: 
   const core = { link: initialLink }
   let session = -1
 
-  /** Take in a patch from the core. */
   function applyPatch(patch: Partial<CoreState>) {
     batch(() => {
       const plain: Partial<CoreState> = {}
@@ -42,10 +36,8 @@ export function createMirror(initialLink: CoreLink, state: DataState, setState: 
 
   let unsubscribe = () => {}
 
-  /** Use another link (another core): the mirror starts again from its state. */
   function connect(next: CoreLink) {
     unsubscribe()
-    // Another core's sessions are numbered on their own: its first patch is a new one.
     session = -1
     core.link = next
     unsubscribe = core.link.subscribe(applyPatch)

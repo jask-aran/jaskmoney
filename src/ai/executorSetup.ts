@@ -13,7 +13,6 @@ function list(value: unknown): unknown[] {
   return value
 }
 
-// Pause details can sit beside the status or inside the pending interaction.
 function detail(value: unknown, key: string): unknown {
   if (value === null || typeof value !== "object") return undefined
   const fields = object(value)
@@ -25,7 +24,6 @@ function detail(value: unknown, key: string): unknown {
   return undefined
 }
 
-/** Keep the pause details so setup can show the approval or input request. */
 export class ExecutorPaused extends Error {
   readonly status: string | undefined
   readonly requestId: unknown
@@ -49,7 +47,6 @@ function failure(value: unknown): Error {
   return new Error(typeof message === "string" ? message : typeof value === "string" ? value : JSON.stringify(value) ?? "Executor's call failed")
 }
 
-/** Unwrap both call envelopes; a pause needs the user's action, not a retry. */
 async function callApp(client: Pick<McpClient, "callTool">, path: string, input: Record<string, unknown>): Promise<unknown> {
   const result = await client.callTool("call", { calls: { path, input } })
   const text = textOf(result)
@@ -58,7 +55,6 @@ async function callApp(client: Pick<McpClient, "callTool">, path: string, input:
     throw new Error(result.isError && text ? text : "Executor gave an invalid call response")
   }
   const response = object(parsed)
-  // Older responses can omit status; their execution still decides success.
   if (response.status !== undefined && response.status !== "completed") throw new ExecutorPaused(parsed)
   const execution = object(response.execution)
   if (execution.ok === false) throw failure(execution.error)
@@ -80,7 +76,6 @@ function mailApp(value: unknown): MailApp {
   return { id: app.id, slug: app.slug, name: app.name, requirement }
 }
 
-/** Reuse Gmail first, then the Google bundle, to avoid a second installation. */
 export async function findMailApp(connect: Connect<"callTool"> = connectExecutor): Promise<MailApp | null> {
   const client = await connect()
   try {
@@ -92,7 +87,6 @@ export async function findMailApp(connect: Connect<"callTool"> = connectExecutor
   } finally { await client.close().catch(() => {}) }
 }
 
-/** Use the catalog entry so setup installs Executor's Gmail app. */
 async function installGmail(connect: Connect<"callTool"> = connectExecutor): Promise<MailApp> {
   const client = await connect()
   try {
@@ -103,7 +97,6 @@ async function installGmail(connect: Connect<"callTool"> = connectExecutor): Pro
   } finally { await client.close().catch(() => {}) }
 }
 
-/** Check the app's requirement; another linked account does not satisfy it. */
 export async function mailAccount(app: MailApp, connect: Connect<"callTool"> = connectExecutor): Promise<MailAccount | null> {
   const client = await connect()
   try {
@@ -118,7 +111,6 @@ export async function mailAccount(app: MailApp, connect: Connect<"callTool"> = c
   } finally { await client.close().catch(() => {}) }
 }
 
-/** Google approval happens in the browser; Executor keeps the Google tokens. */
 export async function gmailConnectLink(app: MailApp, connect: Connect<"callTool"> = connectExecutor): Promise<{ url: string }> {
   const client = await connect()
   try {
@@ -128,7 +120,6 @@ export async function gmailConnectLink(app: MailApp, connect: Connect<"callTool"
   } finally { await client.close().catch(() => {}) }
 }
 
-/** Wait between checks; stop on cancellation or a call error so setup can respond. */
 export async function waitForMailAccount(app: MailApp, { signal, everyMs = 2000, connect = connectExecutor }: {
   signal: AbortSignal; everyMs?: number; connect?: Connect<"callTool">
 }): Promise<MailAccount> {
@@ -155,7 +146,6 @@ export async function waitForMailAccount(app: MailApp, { signal, everyMs = 2000,
   }
 }
 
-/** Install only when neither mail app is already present. */
 export async function ensureMailApp(connect: Connect<"callTool"> = connectExecutor): Promise<{ app: MailApp; installed: boolean }> {
   const app = await findMailApp(connect)
   return app ? { app, installed: false } : { app: await installGmail(connect), installed: true }

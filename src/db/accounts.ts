@@ -1,8 +1,6 @@
 import type { Account } from "../domain/types"
 import type { Db } from "./client"
 
-/** Tracked accounts only, unless `includeUnsynced`: an account whose sync the
- * user switched off is hidden everywhere except the sync settings. */
 export function loadAccounts(db: Db, { includeUnsynced = false }: { includeUnsynced?: boolean } = {}): Account[] {
   const rows = db
     .query(
@@ -63,10 +61,6 @@ export function ensureAccount(
   return loadAccounts(db).find((account) => account.id === id)!
 }
 
-/** Switch provider sync for one account. Switching off removes the account's
- * transactions in the same transaction (sync will not bring them back);
- * switching on only sets the flag, and the next sync fetches its history.
- * Returns the number of transactions removed. */
 export function setAccountSyncEnabled(db: Db, accountId: number, enabled: boolean): number {
   return db.transaction(() => {
     const row = db.query(`SELECT source FROM accounts WHERE id = ?`).get(accountId) as { source: string } | null
@@ -75,8 +69,6 @@ export function setAccountSyncEnabled(db: Db, accountId: number, enabled: boolea
     db.query(`UPDATE accounts SET sync_enabled = ? WHERE id = ?`).run(enabled ? 1 : 0, accountId)
     if (enabled) return 0
     db.query(`DELETE FROM account_selection WHERE account_id = ?`).run(accountId)
-    // Counted, not read from the delete's changes: SQLite versions differ on
-    // whether those include rows its foreign keys cascade to (a tag link).
     const { n } = db.query(`SELECT COUNT(*) AS n FROM transactions WHERE account_id = ?`).get(accountId) as { n: number }
     db.query(`DELETE FROM transactions WHERE account_id = ?`).run(accountId)
     return n

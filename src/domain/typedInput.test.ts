@@ -7,7 +7,6 @@ describe("amountFromText", () => {
     expect(amountFromText("$1,250.50")).toBe(1250.5)
     expect(amountFromText("  80 ")).toBe(80)
     expect(amountFromText(".5")).toBe(0.5)
-    // Arithmetic with the usual precedence and brackets, rounded to cents.
     expect(amountFromText("12+3.5*2")).toBe(19)
     expect(amountFromText("(12+3)*2")).toBe(30)
     expect(amountFromText("600/4")).toBe(150)
@@ -57,11 +56,9 @@ describe("rangeDayFromText", () => {
     expect(rangeDayFromText("1 oct", today, "start")).toBe("2026-10-01")
     expect(rangeDayFromText("1 October 2025", today, "end")).toBe("2025-10-01")
     expect(rangeDayFromText("2 Sep 2026", today, "start")).toBe("2026-09-02")
-    // A month: its first day as a start, its last as an end.
     expect(rangeDayFromText("feb", today, "start")).toBe("2026-02-01")
     expect(rangeDayFromText("feb", today, "end")).toBe("2026-02-28")
     expect(rangeDayFromText("Sept 24", today, "end")).toBe("2024-09-30")
-    // A blank end is today; a blank start isn't a date.
     expect(rangeDayFromText("", today, "end")).toBe(today)
     expect(rangeDayFromText("", today, "start")).toBeNull()
     for (const bad of ["ma", "31 feb", "smarch", "1 oct 202", "--3"]) expect(rangeDayFromText(bad, today, "start")).toBeNull()

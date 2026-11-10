@@ -1,4 +1,3 @@
-/** Test sessions use scratch paths, memory databases, and no real credentials. */
 import { beforeEach } from "bun:test"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -17,10 +16,7 @@ const stopRowLifetimes = watchRowLifetimes(ui, data)
 process.once("exit", stopRowLifetimes)
 
 const settingsDirectory = mkdtempSync(join(tmpdir(), "jaskmoney-test-"))
-// Every app credential and setting beside them, Up's token, and the keys
-// pi-ai would find by itself.
 const credentialVariables = [...CREDENTIAL_NAMES, "JASKMONEY_UP_TOKEN", "OPENAI_API_KEY", "OPENROUTER_API_KEY"]
-// Protect default paths and module-scope code before test files are evaluated.
 process.env.HOME = settingsDirectory
 process.env.XDG_CONFIG_HOME = join(settingsDirectory, "config")
 process.env.XDG_DATA_HOME = join(settingsDirectory, "data")
@@ -28,7 +24,6 @@ process.env.JASKMONEY_CONFIG = join(settingsDirectory, "settings.json")
 process.env.JASKMONEY_DB = ":memory:"
 for (const name of credentialVariables) process.env[name] = ""
 
-// Never the real Executor, nor a browser: a test that wants one passes a fake.
 Object.assign(sources, {
   open: () => {},
   status: async () => ({ signedIn: false, tools: [], error: null }),
@@ -36,8 +31,6 @@ Object.assign(sources, {
   run: async () => { throw new Error("no Executor in tests") },
   signOut: () => {},
 })
-// The first-run setup's too: no Up, Executor or browser unless a test fakes one.
-// Cloudflare is never asked from tests: one made-up account.
 cloudflare.accounts = async () => [{ id: "acct-test", name: "Test account" }]
 Object.assign(welcomeSources, {
   open: () => {},
@@ -56,7 +49,6 @@ purchaseSources.accounts = async () => { throw new Error("no Executor in tests")
 purchaseSources.run = async () => { throw new Error("no Executor in tests") }
 
 beforeEach(() => {
-  // A separate directory also isolates files beside settings, such as credentials.json.
   const directory = mkdtempSync(join(settingsDirectory, "test-"))
   testEnv("HOME", directory)
   testEnv("XDG_CONFIG_HOME", join(directory, "config"))

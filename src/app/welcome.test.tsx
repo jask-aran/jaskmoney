@@ -9,19 +9,11 @@ import { welcomeRows, type WelcomeContext } from "../state/welcome"
 import { handleKey, handlePaste } from "./keys"
 import { openWelcome, sources } from "./welcome"
 
-/**
- * The first-run setup (state/welcome, app/welcome, ui/welcome) — frozen:
- * when it opens by itself, its steps and their keys, that an Up token is
- * never drawn and is only saved once Up answers it, and that email is
- * connected end to end (sign in, add Gmail, approve, check) with a pause
- * or esc said plainly.
- */
 const none: WelcomeContext = { up: false, openrouter: false, openai: false, jev: false, jevKey: false, clairic: false, executor: false }
 const press = (...names: Array<string | [string, { ctrl?: boolean; shift?: boolean }]>) => {
   for (const n of names) handleKey(ui, typeof n === "string" ? key(n) : key(n[0], n[1]), data)
 }
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5))
-/** From the tour to the Up step: its "Skip the tour" row. */
 const skipTour = () => press("down", "return")
 
 function fakeSaving() {
@@ -37,14 +29,12 @@ test("an Up token is pasted and never drawn; it's saved only when Up answers it;
   const t = await renderApp({ width: 130, height: 44 })
   openWelcome(ui)
   skipTour()
-  // Empty, the hint is faint: it doesn't read as text the paste goes into.
   await t.renderOnce()
   const hint = t.captureSpans().lines.flatMap((l) => l.spans).find((s) => s.text === "paste it here")!
   expect(hint.fg.toInts()).toEqual(RGBA.fromHex(ink.faint).toInts())
   expect(handlePaste(ui, "up:yeah:secret-token-9f3a\n", data)).toBe(true)
   await t.renderOnce()
   const frame = t.captureCharFrame()
-  // Dots only: not even the token's last few characters.
   expect(frame).toContain("Token  ••••")
   expect(frame).not.toContain("9f3a")
   expect(frame).not.toContain("secret-token")
@@ -68,22 +58,17 @@ test("an Up token is pasted and never drawn; it's saved only when Up answers it;
   expect(accounts).toHaveBeenLastCalledWith("up:yeah:secret-token-9f3a")
   expect(saved).toEqual([{ JASKMONEY_UP_TOKEN: "up:yeah:secret-token-9f3a" }])
   expect(ui.state.welcome?.token.value).toBe("")
-  // Which accounts sync is chosen first: each spending account with its
-  // savers (same ownership) under it; nothing synced yet.
   data.setState({ upToken: true })
   const rows = () => welcomeRows(ui.state.welcome!, { ...none, up: true }).filter((r) => r.action === "account").map((r) => `${r.syncs ? "●" : "○"} ${r.label} · ${r.detail}`)
   expect(rows()).toEqual(["● Spending · will sync", "●   🏖️ Holiday · will sync", "●   🚨 Emergency · will sync", "● 2Up Spending · will sync", "●   🏠 House · will sync"])
   expect(synced).not.toHaveBeenCalled()
   expect(welcomeRows(ui.state.welcome!, { ...none, up: true })[ui.state.welcome!.cursor]!.label).toBe("Continue")
-  // 2Up Spending off takes its saver with it; its saver back on brings it back.
   ui.setState("welcome", { cursor: 3 }); press("return")
   expect(rows()).toEqual(["● Spending · will sync", "●   🏖️ Holiday · will sync", "●   🚨 Emergency · will sync", "○ 2Up Spending · won't sync", "○   🏠 House · won't sync"])
-  // Space switches too.
   ui.setState("welcome", { cursor: 4 }); press("space")
   expect(rows()[3]).toBe("● 2Up Spending · will sync")
   ui.setState("welcome", { cursor: 3 }); press("return")
   ui.setState("welcome", { cursor: 2 }); press("return")
-  // Leaving the step: the first sync, without the switched-off ones.
   ui.setState("welcome", { cursor: 5 })
   expect(welcomeRows(ui.state.welcome!, { ...none, up: true })[5]!.label).toBe("Continue")
   press("return")
@@ -91,7 +76,6 @@ test("an Up token is pasted and never drawn; it's saved only when Up answers it;
   expect(ui.state.welcome?.step).toBe("ai")
   expect(synced).toHaveBeenCalledTimes(1)
   expect(synced.mock.calls[0]![0]!.sort()).toEqual(["e", "j", "t"])
-  // Back and on again, unchanged: no second sync.
   press(["n", { ctrl: true }])
   ui.setState("welcome", { step: "up", cursor: 5 }); press("return")
   await settle()

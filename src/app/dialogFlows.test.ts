@@ -10,19 +10,12 @@ import { sources } from "./executorSource"
 import { handleKey } from "./keys"
 import type { ImportPreview, ImportProfile } from "../domain/types"
 
-/**
- * Dialogs and the work they start (state/uiStore MODALS, Opening) — frozen:
- * change the code, not these. Each case is work that finishes after the
- * user moved on; over a socket (a remote core) these windows are real.
- */
-
 const restores: Array<() => void> = []
 afterEach(() => {
   for (const restore of restores.splice(0)) restore()
   ui.reset()
 })
 
-/** A call that answers when the test says. */
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((r) => { resolve = r })
@@ -38,7 +31,6 @@ function spy<T extends object, K extends keyof T>(target: T, method: K) {
 const profile: ImportProfile = { id: "bank", name: "Bank", account: "Spending", accountType: "debit", importPrefix: "bank", hasHeader: true, delimiter: ",", dateColumn: 0, amountColumn: 1, descriptionColumns: [2], descriptionJoin: false, amountStrip: "$", dateFormat: "DMY" }
 const preview = { rows: [], accountName: "Spending", rulesEnabled: true } as unknown as ImportPreview
 
-/** Settings › Database › Import, open on its file list. */
 async function openImport() {
   data.init(":memory:")
   spy(data, "importDirectory").mockResolvedValue("/csv")

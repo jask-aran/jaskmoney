@@ -51,10 +51,10 @@ describe("provider category backfill", () => {
     const local = createCategory(db, { name: "Mine", color: "#ffffff" })
     const insert = db.query(`INSERT INTO transactions (date_raw, date_iso, amount, description, category_id, source, ext_category, category_source)
       VALUES ('x', '2026-01-01', -1, ?, ?, ?, ?, ?)`)
-    insert.run("old", uncat, "up", "a", null)             // outside the sync window, never mapped
-    insert.run("stale", id("z"), "up", "a", "provider")   // Up changed its category
-    insert.run("gone", id("a"), "up", null, "provider")   // Up removed its category
-    insert.run("unknown", uncat, "up", "nope", null)      // category not in the tree
+    insert.run("old", uncat, "up", "a", null)
+    insert.run("stale", id("z"), "up", "a", "provider")
+    insert.run("gone", id("a"), "up", null, "provider")
+    insert.run("unknown", uncat, "up", "nope", null)
     insert.run("mine", local, "up", "a", "user")
     insert.run("ruled", local, "up", "a", "rule")
     insert.run("csv", local, "csv", null, null)

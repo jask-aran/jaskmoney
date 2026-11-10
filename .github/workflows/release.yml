@@ -1,9 +1,5 @@
 name: Release
 
-# Push a tag (git tag -a v1.1.0 -m "…" && git push origin v1.1.0) to test, build
-# the standalone Linux binary and attach it to that tag's GitHub
-# release (made if it doesn't exist yet). Run it by hand with a tag to rebuild
-# an existing release's binaries.
 on:
   push:
     tags: ["v*"]
@@ -39,12 +35,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The binary embeds OpenTUI's native renderer for the platform it's
-          # built on, so each is built on its own runner.
           - runner: ubuntu-latest
             name: linux-x64
-          # macOS builds from source (scripts/install.sh): a binary from here
-          # isn't signed, and Gatekeeper refuses one downloaded in a browser.
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -75,8 +67,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           chmod +x dist/*
-          # Gzipped too (123 → 54 MB): what the installer and
-          # `jaskmoney upgrade` download; the plain one stays for older binaries.
           for f in dist/jaskmoney-*; do gzip -9 -k "$f"; done
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --title "Jaskmoney ${TAG#v}" --generate-notes --verify-tag

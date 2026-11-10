@@ -9,7 +9,6 @@ const legendText = (model: ReturnType<typeof spendingChart>) => model.legend.map
 
 describe("Cumulative budget", () => {
   test("the budget is a pace line: the legend says how far over or under pace today is", () => {
-    // $150 a day for 5 days against $1,000 over 10 days: $750 spent, $500 pace.
     const series = { dates, values: dates.map(() => 150) }
     const over = spendingChart("Cumulative", series, 40, 10, "2026-10-05", [], 1000)
     expect(legendText(over)).toContain("Budget $1,000, $250 over pace")
@@ -19,7 +18,6 @@ describe("Cumulative budget", () => {
   test("from a few days in it says where the period ends at its pace so far; once over, the budget's over or under, not its pace", () => {
     const series = { dates, values: dates.map(() => 150) }
     const text = (m: ReturnType<typeof spendingChart>) => m.rows.map((r) => r.map((run) => run.text).join("")).join("\n")
-    // $750 over 5 days of 10: $1.5k by the end.
     expect(text(spendingChart("Cumulative", series, 40, 10, "2026-10-05", [], 1000))).toContain("≈ $1.5k")
     const over = spendingChart("Cumulative", series, 40, 10, "2026-10-20", [], 1000)
     expect(text(over)).not.toContain("≈")
@@ -35,7 +33,6 @@ describe("Cumulative budget", () => {
 test("weekly spending and cash-flow charts use Sunday buckets and labels", () => {
   const dates = ["2026-10-03", "2026-10-04", "2026-10-05"]
   const weekly = spendingChart("Weekly", { dates, values: [1, 2, 3] }, 60, 8, "2026-10-05", [], undefined, undefined, "sunday")
-  // Its axis is a line chart's over the same days: Sunday the 4th starts a week.
   expect(weekly.labels).toMatch(/ 4 /)
   expect(weekly.legend.map((s) => s.text).join("")).toContain("this week $5 so far")
   const cashFlow = cashFlowChart(dates, 60, 8, "2026-10-05", [], [], new Set(), "sunday")
@@ -82,7 +79,6 @@ describe("what made a bar tall, and how much room there is", () => {
     const m = spendingChart("Daily", { dates: d, values }, 80, 12, d[9]!, rows, 1000)
     expect(text(m)).toContain("Centre Com $400")
     expect(legendText(m)).toContain("a day left in the budget")
-    // A transfer isn't spending: it never names a bar.
     const moved = spendingChart("Daily", { dates: d, values }, 80, 12, d[9]!, [...rows, transaction({ id: 3, dateISO: d[3]!, amount: -500, description: "Transfer to Holiday", internal: true, excluded: true, status: null })])
     expect(text(moved)).not.toContain("Transfer")
   })
@@ -99,7 +95,6 @@ describe("what made a bar tall, and how much room there is", () => {
       const m = cashFlowChart(range, width, 12, today, [acc], rows, new Set([1]))
       expect({ width, said: text(m).includes("this week -$50") || legendText(m).includes("this week -$50") }).toEqual({ width, said: true })
     }
-    // Monthly (a year to Monday 2 Nov): November's first two days.
     const year = days(366, "2025-11-02")
     const monthly = cashFlowChart(year, 120, 12, today, [acc], rows, new Set([1]))
     expect(text(monthly) + legendText(monthly)).toContain("Nov so far -$100")
@@ -120,10 +115,8 @@ describe("what made a bar tall, and how much room there is", () => {
   test("a bar named after a payee who isn't most of it gives the payee's own figure, and adds up a payee's rows", () => {
     const acc = account({ id: 1, balance: 0 })
     const pay = (id: number, dateISO: string, amount: number, description: string) => transaction({ id, dateISO, amount, description, accountName: "Spending", categoryName: "Salary", income: true, status: null })
-    // Two pays from one employer and a refund: the employer is the whole bar.
     const one = cashFlowChart(days(92, "2026-08-01"), 60, 12, "2026-10-31", [acc], [pay(1, "2026-10-02", 5000, "Acme Pty Ltd"), pay(2, "2026-10-16", 5000, "Acme Pty Ltd"), pay(3, "2026-10-20", 300, "Refund")], new Set([1]))
     expect(text(one)).toContain("Acme Pty Ltd +$10k")
-    // Two payees: the bar's total, then the bigger payee's own.
     const two = cashFlowChart(days(92, "2026-08-01"), 60, 12, "2026-10-31", [acc], [pay(1, "2026-08-04", 6000, "Acme Pty Ltd"), pay(2, "2026-08-18", 4000, "Globex")], new Set([1]))
     expect(text(two)).toContain("+$10k · Acme Pty Ltd +$6k")
   })

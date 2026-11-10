@@ -4,27 +4,12 @@ import { ink } from "../../theme"
 import type { Span } from "../primitives/spans"
 import { textCells } from "./runs"
 
-/**
- * A chart drawing itself in: what's shown of a plot row `p` of the way
- * (0–1) through. Lines (braille) trace left to right behind an edge; bars
- * (block elements) rise from the bottom row. Labels in the plot (a
- * stretch of words: a peak's name, a total) appear together as the chart
- * all but finishes (`labels` "together"), or each once the edge has passed
- * its end, a beat after its point, in the order of their points
- * ("sequential"); on a chart with bars (`bars`) a label waits, too, for
- * the bars to reach its row. The frame (gridlines, rules, axes: box drawing) is there
- * from the start, so the chart's shape is never in doubt. Pure: the same
- * model, a mask over it.
- */
 export function revealRuns(runs: Run[], row: number, rows: number, p: number, frame?: ReadonlyMap<number, Run>, bars = false, labels: ChartLabelMode = "together"): Run[] {
   if (p >= 1) return runs
-  // By terminal cell: an emoji's second cell is "" (textCells), so a hidden
-  // emoji leaves two blanks and the row keeps its width.
   const cells: Array<{ ch: string; ink: Run["ink"] }> = []
   for (const run of runs) for (const ch of textCells(run.text)) cells.push({ ch, ink: run.ink })
   const width = cells.length
   const edge = p * width
-  // Rows from the bottom that bars have reached.
   const risen = row >= rows - Math.ceil(p * rows)
   const kind = (ch: string): "space" | "line" | "bar" | "frame" | "word" => {
     if (ch === " ") return "space"
@@ -35,7 +20,6 @@ export function revealRuns(runs: Run[], row: number, rows: number, p: number, fr
     if (code >= 0x2500 && code <= 0x257f) return "frame"
     return "word"
   }
-  // Each label's last column: words joined by single spaces.
   const labelEnd = new Array<number>(width).fill(-1)
   for (let i = 0; i < width; i++) {
     if (kind(cells[i]!.ch) !== "word") continue
@@ -57,7 +41,6 @@ export function revealRuns(runs: Run[], row: number, rows: number, p: number, fr
       const k = kind(ch)
       shown = k === "space" || k === "frame" || (k === "line" ? col < edge : risen)
     }
-    // Hidden: what's beneath it, the column's gridline if it has one.
     const under = frame?.get(col)
     if (shown) { if (ch) put(ch, ink) }
     else if (under) put(under.text, under.ink)
@@ -66,16 +49,10 @@ export function revealRuns(runs: Run[], row: number, rows: number, p: number, fr
   return out
 }
 
-/** How far through (eased) labels shown together appear: the line is
- * all but drawn; the rest of the ease is a slow settle. */
 const LABELS_TOGETHER_AT = 0.85
 
-/** How far (columns) past a label's end the edge goes before it shows: a
- * beat after its point. */
 const LABEL_LAG = 1.5
 
-/** Each column's gridline (its character and ink) anywhere in the plot,
- * for revealRuns to show where a line or bar hasn't reached yet. */
 export function gridColumns(rows: Run[][]): Map<number, Run> {
   const found = new Map<number, Run>()
   for (const runs of rows) {
@@ -88,29 +65,18 @@ export function gridColumns(rows: Run[][]): Map<number, Run> {
   return found
 }
 
-/** Whether a plot has bars (block elements) anywhere: its labels wait for them to rise. */
 export function hasBars(rows: Run[][]): boolean {
   return rows.some((runs) => runs.some((run) => /[▀-▟]/.test(run.text)))
 }
 
-/** Whether a chart has anything to draw in: a dot of a line or a block of
- * a bar (blank braille aside), not only its grid. */
 export function hasMarks(rows: Run[][]): boolean {
   return rows.some((runs) => runs.some((run) => /[\u2801-\u28ff▀-▟]/.test(run.text)))
 }
 
-/** Ease out: quick to start, settling at the end. `power` is the curve's
- * shape: 1 is linear, 2 gentle, 3 the default, higher a sharper start and
- * a longer settle (CHART_CURVES). */
 export const easeOut = (t: number, power = 3) => 1 - (1 - Math.min(1, Math.max(0, t))) ** power
 
-/** A line of a pane drawn as lines (the Budgets pane's top, the Range
- * pane's): `stays` while it draws in (headings, blanks), `sweeps` in from
- * the left (bars), or drops in; `bg` fills it to the row's end. */
 export interface TopLine { spans: Span[]; bg?: string; sweeps?: boolean; stays?: boolean }
 
-/** `spans` `p` of the way (0–1) through sweeping in from the left: cut at
- * an edge that reaches the row's end (`width`) at 0.7, the rest blank. */
 export function sweptIn(spans: Span[], p: number, width: number): Span[] {
   if (p >= 1) return spans
   const out: Span[] = []
@@ -125,9 +91,6 @@ export function sweptIn(spans: Span[], p: number, width: number): Span[] {
   return [...out, { text: " ".repeat(Math.max(0, total - shown)), fg: ink.note }]
 }
 
-/** `lines` `p` of the way through drawing in: the bars sweep in (sweptIn),
- * the rest drop in, in order, from 0.3 to 0.9; `stays` lines are there from
- * the start. Pure, as revealRuns. */
 export function revealLines(lines: TopLine[], p: number, width: number): TopLine[] {
   if (p >= 1) return lines
   return lines.map((line, i) => {

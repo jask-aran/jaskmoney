@@ -1,15 +1,3 @@
-/**
- * The README's recordings (scripts/cast.ts): the Overview through its
- * charts (the hero), and the setup's tour (--welcome), each demo for
- * exactly one loop of its script, at its own speed, cropped to the demo's
- * pane. Every frame the app drew is kept, held as long as it was.
- *
- *   bun run recordings [binary] [--only=overview,filter,ask,suggest,chart]
- *                                    (default: dist/jaskmoney, built first)
- *
- * Writes docs/screenshots/<scene>.gif (the README's), and
- * dist/recordings/<scene>.mp4 and the loop as asciinema's .cast.
- */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -19,40 +7,26 @@ import { appBinary, draw, startApp, type Cells, type Session } from "./cast"
 
 type DemoId = (typeof DEMOS)[number]["id"]
 
-// The tour's world, as a new install's categories make it, for how long
-// each demo's script runs (the Smart search's depends on its words).
 const scratch = mkdtempSync(join(tmpdir(), "jaskmoney-rec-"))
 const db = openDb(join(scratch, "rec.db"))
 const topics = tourTopics(demoWorld(loadCategories(db)))
 db.close()
 rmSync(scratch, { recursive: true, force: true })
 
-/** What's filmed: how to bring it up, how long a loop is, what's pressed
- * through it, and whether it's cropped to the tour's demo pane. */
 interface Scene {
   id: string
   args: string[]
   settings?: object
   loopMs: number
-  /** Brings it to just before its loop; resolves with the key that starts
-   * it (pressed as the loop begins). */
   setup(app: Session): Promise<string>
-  /** Keys pressed `at` ms into the loop. */
   keys?: Array<{ at: number; key: string }>
   pane: boolean
 }
 
-/** How the charts draw in: juicy (900 ms, the tour's own speed) on the
- * quadratic curve, an even pace with a short settle. */
 const MOTION = { chartSpeed: "juicy", chartCurve: "quadratic" }
 
-/** How long each recording's first frame is held: a look at the screen
- * before it moves (an Overview chart before it draws in), short enough not
- * to read as a hitch. */
 const HOLD_MS = 250
 
-/** A tour demo: Welcome › Start, then → to it (each → starts the next
- * demo from its beginning); Charts, the first, starts again with ←. */
 const tourDemo = (id: DemoId): Scene => ({
   id, args: ["--welcome"], loopMs: demoLoopMs(id, topics), pane: true, settings: { ui: MOTION },
   async setup(app) {
@@ -67,38 +41,27 @@ const tourDemo = (id: DemoId): Scene => ({
   },
 })
 
-/** Keys typed one after another from `at`, `gap` ms apart. */
 const typed = (at: number, keys: string[], gap: number) => keys.map((key, i) => ({ at: at + i * gap, key }))
 
-/** A chart's view stepped: the jump (v) to the chart (t top, b bottom),
- * then h or l, quickly enough that the jump's labels barely show. */
 const onChart = (at: number, chart: string, step: string) => typed(at - 120, ["v", chart, step], 60)
 
-/** The README's hero: a tour of the app on the demo data, from Settings
- * back to Settings so it loops. The Overview (each chart drawing in, MOTION,
- * chart motion "always"): the range and both charts' views changed in turn,
- * then every change undone; Transactions: two filters typed and deleted;
- * Settings for a moment (Budgets is skipped). It starts on Settings, with
- * the loop's first key (1) bringing the Overview up as it was. */
 const OVERVIEW_KEYS = [
-  // Each change 1.9 s apart: the charts draw in (900 ms), then a second on
-  // them. A pause after each change of screen before its actions start.
-  { at: 2200, key: "d" }, // 2M: both charts redraw
-  ...onChart(4100, "t", "l"), // the top chart: Daily
-  ...onChart(6000, "b", "l"), // the bottom chart: Available
-  { at: 7900, key: "[" }, // the 2M before
-  ...onChart(9800, "t", "h"), // back: Cumulative
-  ...onChart(11700, "b", "h"), // back: Net position
-  { at: 13600, key: "]" }, // back: the last 2M
-  { at: 15500, key: "D" }, // back: 1M
-  { at: 17400, key: "2" }, // Transactions
+  { at: 2200, key: "d" },
+  ...onChart(4100, "t", "l"),
+  ...onChart(6000, "b", "l"),
+  { at: 7900, key: "[" },
+  ...onChart(9800, "t", "h"),
+  ...onChart(11700, "b", "h"),
+  { at: 13600, key: "]" },
+  { at: 15500, key: "D" },
+  { at: 17400, key: "2" },
   { at: 18600, key: "/" },
   ...typed(19000, [..."coffee"], 130),
   ...typed(21200, Array(6).fill("Backspace"), 70),
   ...typed(22100, [..."guzman"], 130),
   ...typed(24300, Array(6).fill("Backspace"), 70),
   { at: 25100, key: "Escape" },
-  { at: 25700, key: "4" }, // Settings
+  { at: 25700, key: "4" },
 ]
 const overview: Scene = {
   id: "overview", args: ["--demo"], loopMs: 27700, pane: false,
@@ -107,7 +70,6 @@ const overview: Scene = {
   async setup(app) {
     await app.waitFor("Demo mode")
     await Bun.sleep(1500)
-    // Focus as the loop leaves it: on the bottom chart.
     app.press("v"); await Bun.sleep(60); app.press("b")
     await Bun.sleep(300)
     app.press("4")
@@ -118,8 +80,6 @@ const overview: Scene = {
 
 const SCENES: Scene[] = [overview, tourDemo("filter"), tourDemo("ask"), tourDemo("suggest"), tourDemo("chart")]
 
-/** The demo's pane: the box the tour draws below its card, from its
- * corners in the screen's text, in cells. */
 function paneCells(lines: string[]): Cells | null {
   const cardEnd = lines.findIndex((l) => l.includes("╰"))
   const top = lines.findIndex((l, r) => r > cardEnd && l.includes("╭"))
@@ -130,7 +90,6 @@ function paneCells(lines: string[]): Cells | null {
   return right < 0 || bottom < 0 ? null : { col, row: top, cols: right - col + 1, rows: bottom - top + 1 }
 }
 
-/** Records one loop of `scene` live (its keys on time), then draws it. */
 async function film(binary: string, scene: Scene): Promise<void> {
   const app = startApp(binary, scene.args, scene.settings)
   let from = 0
@@ -148,13 +107,8 @@ async function film(binary: string, scene: Scene): Promise<void> {
   } finally {
     app.close()
   }
-  // Where a demo's pane is: the first of a few moments that shows it whole.
   const pane = scene.pane ? [0.5, 0.25, 0.75, 0.9].map((f) => paneCells(app.screen(from + scene.loopMs * f))).find(Boolean) : undefined
   if (scene.pane && !pane) throw new Error(`couldn't find ${scene.id}'s pane:\n${app.screen(from + scene.loopMs / 2).join("\n")}`)
-  // From when the key's change shows, not the screen before it (an MP4's
-  // first frame is its preview): the first write that changes the title
-  // row (the demo pane's top, or the Overview's top chart). The app's
-  // first writes after a key can be elsewhere (the tour's card).
   const titleRow = pane?.row ?? app.screen(from).findIndex((line, row) => row > 3 && line.startsWith("╭─"))
   let start = app.firstWrite(from)
   while (start < from + 1000 && app.screen(start)[titleRow] === app.screen(from)[titleRow]) {
@@ -162,14 +116,11 @@ async function film(binary: string, scene: Scene): Promise<void> {
     if (next === start) break
     start = next
   }
-  // Then to the end of that frame: the terminal gets a frame in several
-  // writes, a millisecond or so apart (frames are ~16 ms apart); the first
-  // alone leaves the old screen below it.
   while (app.firstWrite(start) !== start && app.firstWrite(start) - start < 5) start = app.firstWrite(start)
   const cast = app.cast(start, start + scene.loopMs, HOLD_MS)
   writeFileSync(`dist/recordings/${scene.id}.cast`, cast)
-  await draw(cast, scene.loopMs + HOLD_MS, { mp4: `dist/recordings/${scene.id}.mp4`, gif: `docs/screenshots/${scene.id}.gif`, gifWidth: pane ? 1280 : 1600 }, pane ?? undefined)
-  console.log(`docs/screenshots/${scene.id}.gif, dist/recordings/${scene.id}.mp4, .cast  ${((scene.loopMs + HOLD_MS) / 1000).toFixed(2)} s${pane ? `, ${pane.cols}×${pane.rows} cells` : ""}`)
+  await draw(cast, scene.loopMs + HOLD_MS, { mp4: `dist/recordings/${scene.id}.mp4`, gif: `docs/${scene.id}.gif`, gifWidth: pane ? 1280 : 1600 }, pane ?? undefined)
+  console.log(`docs/${scene.id}.gif, dist/recordings/${scene.id}.mp4, .cast  ${((scene.loopMs + HOLD_MS) / 1000).toFixed(2)} s${pane ? `, ${pane.cols}×${pane.rows} cells` : ""}`)
 }
 
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",")

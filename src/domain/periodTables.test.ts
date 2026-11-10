@@ -12,10 +12,8 @@ const spend = (dateISO: string, amount: number, c = rent, description = "x") => 
 test("Trends: a month a row, each group's spending in the range's order, partial months marked", () => {
   const rows = [spend("2026-08-10", 1000), spend("2026-09-03", 1000), spend("2026-09-20", 50, fun), spend("2026-10-02", 40, fun)]
   const out = trendRows(rows, categories, "2026-08-15", "2026-10-31", "2026-10-20", "monday")
-  // Home (its subcategory Rent rolled up) first: the range's bigger group.
   expect(out.groups.map((g) => g.name)).toEqual(["Home", "Fun"])
   expect(out.rows.map((r) => [r.label, r.amounts, r.partial])).toEqual([
-    // Before the range's start: August's rent isn't in it.
     ["Aug 2026", [0, 0], true],
     ["Sep 2026", [1000, 50], false],
     ["Oct 2026", [0, 40], true],
@@ -30,8 +28,6 @@ test("Merchants: the range's spending by merchant, most first, against the perio
     { merchant: "CAFE", count: 2, spent: 45, before: 30, categoryId: 3 },
     { merchant: "NEWBIE", count: 1, spent: 15, before: 0, categoryId: 3 },
   ])
-  // No history for the period before: no comparison at all.
   expect(merchantRows(now, null)[0]!.before).toBeNull()
-  // Income isn't spending.
   expect(merchantRows([transaction({ id: 99, amount: 500, description: "EMPLOYER" })], null)).toEqual([])
 })

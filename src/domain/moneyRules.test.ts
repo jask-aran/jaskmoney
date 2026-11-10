@@ -21,11 +21,8 @@ test("money rules keep sign, category, income, exclusion, IGNORE and held status
               expect(hasIgnoreTag(row)).toBe(ignored)
               expect(isOrdinaryFlow(row)).toBe(ordinary)
               expect(isUncategorised(row)).toBe(uncategorised)
-              // Income is the income categories, whatever the sign.
               expect(isIncome(row)).toBe(ordinary && income)
-              // Spending: money out, or money back into a spending category.
               expect(isSpending(row)).toBe(ordinary && !income && (amount < 0 || (amount > 0 && !uncategorised)))
-              // Uncategorised money in is neither until it gets a category.
               expect(isUnsortedIn(row)).toBe(ordinary && !income && amount > 0 && uncategorised)
               expect(isHeld(row)).toBe(status === "HELD")
             }

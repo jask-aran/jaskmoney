@@ -42,14 +42,12 @@ test("n in Merchants writes a note (letters are text); N on a row opens the same
   expect(ui.state.merchantNote).toBeNull()
   expect(data.state.merchantNotes[merchant.toLowerCase()]).toBe("jk always q")
   expect(data.notePrompts().has(merchant.toLowerCase())).toBe(false)
-  // N on the row: the same note to edit; esc leaves it.
   ui.setState({ txnView: "rows", managerCursor: data.scopedTransactions().findIndex((t) => t.description === merchant) })
   handleKey(ui, key("n", { shift: true }), data)
   expect(ui.state.merchantNote).toMatchObject({ merchant, draft: "jk always q" })
   handleKey(ui, key("x"), data)
   handleKey(ui, key("escape"), data)
   expect(data.state.merchantNotes[merchant.toLowerCase()]).toBe("jk always q")
-  // Emptied: removed.
   handleKey(ui, key("n", { shift: true }), data)
   for (let i = 0; i < 11; i++) handleKey(ui, key("backspace"), data)
   handleKey(ui, key("return"), data)

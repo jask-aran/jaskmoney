@@ -8,45 +8,26 @@ import type { Run } from "./lineChart"
 import { textCells } from "./runs"
 import type { Span } from "../primitives/spans"
 
-/** Columns every y-axis keeps for its labels: room for the money labels
- * charts usually have ("$0", "$500", "$10k", "$2.5k", "-$500"), so the axis, and
- * the gridlines after it, stay put from view to view and range to range.
- * Only a longer label widens it. */
 const AXIS_LABEL = 5
 
-/** The y-axis width for `ticks`: the longest label (at least AXIS_LABEL),
- * a space and the tick. */
 export function axisWidth(ticks: Map<number, string>): number {
   return Math.max(AXIS_LABEL, ...[...ticks.values()].map((t) => t.length)) + 2
 }
 
-/** A blank column between a chart's plot and its pane's right edge, to
- * balance the room the axis labels leave on the left. */
 export const CHART_RIGHT_PAD = 1
 
-/** The axis width before the ticks are known: usually the right one. */
 export const AXIS_GUESS = AXIS_LABEL + 2
 
 export interface ChartModel {
   rows: Run[][]
-  /** Axis label per row (top first). */
   ticks: Map<number, string>
-  /** X-axis label line, aligned with the plot. */
   labels: string
-  /** Where in `labels` today's date sits, drawn in today's ink. */
   today?: { start: number; length: number }
-  /** Other stretches of `labels` in an ink of their own (a month's net). */
   labelInks?: Array<{ start: number; length: number; ink: string }>
-  /** The legend: series marks in their colours with names and figures,
-   * shown in the pane's bottom border. */
   legend: Span[]
-  /** Colours for inks only this chart has (a saver's line), over the
-   * shared ones. */
   inks?: Record<string, string>
 }
 
-/** The x-axis line under the plot: a corner under the y-axis, then a rule
- * with a tick wherever a gridline comes down to it. */
 function xAxisLine(rows: Run[][]): string {
   const gridlines = new Set<number>()
   for (const runs of rows) {
@@ -57,8 +38,6 @@ function xAxisLine(rows: Run[][]): string {
   return "└" + Array.from({ length: width }, (_, c) => (gridlines.has(c) ? "┴" : "─")).join("")
 }
 
-/** The x labels as spans: label grey, with stretches in their own colours
- * (today's date in its rule's). */
 function axisLabels(text: string, coloured: Array<{ start: number; length: number; fg: string }>): Span[] {
   const fgs = new Array<string>(text.length).fill(ink.label)
   for (const c of coloured) for (let i = c.start; i < Math.min(text.length, c.start + c.length); i++) fgs[i] = c.fg
@@ -71,20 +50,11 @@ function axisLabels(text: string, coloured: Array<{ start: number; length: numbe
   return spans
 }
 
-/** A y-axis, the plot rows, the x-axis line (with `baseline`), then the x
- * labels. `inks` maps each run's ink to a colour. With `revealMs`, each
- * new `revealKey` draws the chart in over that long (reveal says how);
- * new data under the same key just shows (motion says when to ask). */
 export function ChartBody(props: { model: ChartModel; inks: Record<string, string>; baseline?: boolean; revealKey?: string; revealMs?: number; curve?: string; labels?: ChartLabelMode }) {
   const axis = () => axisWidth(props.model.ticks)
   const shown = useReveal(() => props.revealKey, () => props.revealMs ?? 0, () => props.curve)
-  // The gridlines a reveal leaves standing, and whether it has bars: found
-  // once per model, and only for a draw-in (each looks at every cell).
   const frame = perRows(gridColumns)
   const bars = perRows(hasBars)
-  // A row's axis and runs, coloured. The props are read once a row, not
-  // once a run: each read is a tracked lookup, and a draw-in redoes every
-  // row on each tick.
   const rowSpans = (runs: Run[], i: number): StyledSpan[] => {
     const model = props.model, inks = props.inks, p = shown()
     const own = model.inks
@@ -95,8 +65,6 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
   }
   return (
     <>
-      {/* One styled line per row (StyledLine), not a span per run: a year's
-          chart is hundreds of runs. Index keeps the rows as models change. */}
       <Index each={props.model.rows}>
         {(runs, i) => (
           <StyledLine spans={rowSpans(runs(), i)} />
@@ -113,7 +81,6 @@ export function ChartBody(props: { model: ChartModel; inks: Record<string, strin
   )
 }
 
-/** `fn` of a chart's rows, worked out again only for new rows. */
 function perRows<T>(fn: (rows: Run[][]) => T): (rows: Run[][]) => T {
   let was: Run[][] | undefined
   let value: T

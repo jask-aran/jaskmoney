@@ -15,17 +15,14 @@ test("a smart search's question describes its filter until the filter changes; â
   setup()
   const expr = 'ask:"coffee" AND type:spending'
   handleKey(ui, key("/"), data)
-  // As runSmartSearch leaves it: the expression in the draft, the question remembered.
   ui.setState({ filterBar: { draft: expr, caret: expr.length }, smartQuestion: { question: "coffee spending", expr } })
   expect(smartQuestionFor(ui.state, (ui.state.filterBar?.draft ?? ""))).toBe("coffee spending")
   expect(footerHints("filter", { focusedSection: "mgr.transactions", drillReturn: null, chartViews: [0, 4, 7, 8], recallQuestion: true }).some((h) => h.key === "â†‘")).toBe(true)
   handleKey(ui, key("up"), data)
   expect((ui.state.filterBar?.draft ?? "")).toBe("?coffee spending")
   expect((ui.state.filterBar != null)).toBe(true)
-  // Edited by hand, the filter is no longer the question's.
   expect(smartQuestionFor(ui.state, `${expr} AND amt:<=-5`)).toBeNull()
   expect(smartQuestionFor(ui.state, ` ${expr} `)).toBe("coffee spending")
-  // esc forgets it.
   handleKey(ui, key("escape"), data)
   expect(ui.state.smartQuestion).toBeNull()
 })

@@ -8,21 +8,8 @@ import { loadTransactions, openDb } from "../db/client"
 import { category, transaction } from "../testing/fixtures"
 import type { Transaction } from "./types"
 
-/**
- * Demo mode from your history (acceptance, frozen; approved 2026-10-29).
- * Switching demo on samples your ordinary spending (no people, transfers,
- * income, messages or bills) and makes five times as many rows from it,
- * amounts varied, spread spikily over three years. Some of the rarer
- * merchants are wholly uncategorised (about DEMO_ASK_ROWS rows, so a
- * suggestion run is cheap), which the decision model has to work out
- * rather than history; a few rows of known merchants are hidden too. The
- * evaluation's set hides far more (a fifth of all merchants). True
- * categories are kept beside the database. Fixtures here are invented.
- * (Cheaper demo approved 2026-10-29.)
- */
 const today = "2026-10-27"
 
-// Invented merchants, each in one of the demo's categories.
 const MERCHANTS: Array<[string, string, number]> = [
   ["Bean Counter Cafe", "Restaurants & Cafes", 6], ["Tiny Teapot", "Restaurants & Cafes", 9], ["Noodle Lane", "Takeaway", 18],
   ["Burger Barn", "Takeaway", 14], ["Fresh Fields Market", "Groceries", 70], ["Corner Grocer", "Groceries", 35],
@@ -46,7 +33,6 @@ function history(): Transaction[] {
   for (const [description, name, amount] of MERCHANTS) for (let n = 0; n < 3; n++) {
     add({ description, rawText: `${description.toUpperCase()} MELBOURNE`, amount: -amount * (1 + n / 10), categoryId: idOf(name), categoryName: name, cardMethod: "CONTACTLESS" })
   }
-  // Left out: people, a handle, a message, a transfer, income, uncategorised, a bill, a category the demo hasn't.
   add({ description: "Alex Example", transactionType: "Pay Anyone", amount: -40, categoryId: idOf("People"), categoryName: "People" })
   add({ description: "$someone", amount: -12, categoryId: idOf("Restaurants & Cafes"), categoryName: "Restaurants & Cafes" })
   add({ description: "Cafe With Note", message: "for Sam", amount: -9, categoryId: idOf("Restaurants & Cafes"), categoryName: "Restaurants & Cafes" })

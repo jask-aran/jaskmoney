@@ -5,21 +5,9 @@ import { addDays } from "./days"
 import { matchQuestion, matchState } from "./questions"
 import type { Transaction } from "./types"
 
-/**
- * `ask:"coffee"`: Jev judges, row by row, whether a transaction matches the
- * words by what the money was for, not only by its description. Each row is
- * its own question and a request carries hundreds, so the default window
- * takes about a second.
- */
-
-/** At most this many rows are judged per term, the most recent first. */
 export const ASK_LIMIT = 2000
-/** With no `date:` term, only rows from the last this-many days are judged. */
 export const ASK_DEFAULT_DAYS = 90
 
-/** Which rows to send: the most recent ASK_LIMIT, from the last
- * ASK_DEFAULT_DAYS unless the filter limits dates itself. Also how many
- * were left out, to say so. */
 export function askCandidates(rows: Transaction[], today: string, datedFilter: boolean): { rows: Transaction[]; skipped: number } {
   const since = datedFilter ? null : addDays(today, -(ASK_DEFAULT_DAYS - 1))
   const inWindow = since ? rows.filter((t) => t.dateISO >= since) : rows
@@ -27,11 +15,6 @@ export function askCandidates(rows: Transaction[], today: string, datedFilter: b
   return { rows: recent, skipped: rows.length - recent.length }
 }
 
-/**
- * Ask Jev how likely each row matches `words` (0–1; MATCH_AT and NEAR_AT
- * read it). `onJudged` gets each request's probabilities as it lands; a
- * failed request goes to `onError` and the rest carry on.
- */
 export async function judgeRows(
   jev: Pick<JevClient, "judge">,
   words: string,

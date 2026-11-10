@@ -2,13 +2,6 @@ import { For } from "solid-js"
 import { theme } from "../../theme"
 import { S } from "./S"
 
-/**
- * Up's mark for the Overview's top-right corner: a yellow triangle with "up"
- * in coral, as quadrant-block pixel art five rows tall (the tab bar, the gap
- * and the Date Range). Traced from the brand mark. Each cell has a glyph, an
- * ink and a paper; "." is the row's own background (the tab bar's on the
- * first row, the canvas below).
- */
 const GLYPHS = [
   "     ▟▙     ",
   "    ▟  ▙    ",

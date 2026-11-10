@@ -46,7 +46,6 @@ describe("OpenTUI settings database", () => {
     ensureSchema(db)
     const id = (name: string) => (db.query("SELECT id FROM categories WHERE name = ?").get(name) as { id: number }).id
     const income = id("Income")
-    // Rewind to v15: no income column and no income categories.
     db.exec(`DELETE FROM categories WHERE parent_id = ${income}; ALTER TABLE categories DROP COLUMN income; ALTER TABLE budget_cycle DROP COLUMN pay_early; DROP TABLE category_suggestions; ALTER TABLE categories DROP COLUMN budget_ignored; UPDATE schema_meta SET version = 15;`)
     const add = db.query(`INSERT INTO transactions (date_raw, date_iso, amount, description, category_id, category_source, source, external_id, transaction_type)
       VALUES ('x', '2026-10-14', ?, ?, ?, ?, 'up', ?, ?)`)
@@ -67,7 +66,6 @@ describe("OpenTUI settings database", () => {
     expect(category("b")).toEqual({ name: "Other income", source: "user" })
     expect(category("c")).toEqual({ name: "Salary", source: "type" })
     expect(category("d")).toEqual({ name: "Interest", source: "type" })
-    // A category you chose is kept, even on a Salary row.
     expect(category("e")).toEqual({ name: "Groceries", source: "user" })
     expect(db.query("SELECT c.name FROM rules_v2 r JOIN categories c ON c.id = r.set_category_id").get()).toEqual({ name: "Other income" })
   })
@@ -78,7 +76,6 @@ describe("OpenTUI settings database", () => {
     ensureSchema(db)
     const account = ensureAccount(db, "ANZ CREDIT", "credit")
     db.query(`INSERT INTO transactions (date_raw, date_iso, amount, description, account_id) VALUES ('x', '2026-01-01', -5, 'kept', ?)`).run(account.id)
-    // Rewind to a v8 profile: drop the v9 columns and objects.
     db.exec(`
       DROP INDEX idx_accounts_external; DROP INDEX idx_transactions_external; DROP INDEX idx_transactions_status;
       DROP TABLE sync_state;
@@ -113,7 +110,6 @@ describe("OpenTUI settings database", () => {
     const defaultCategory = db.query("SELECT id FROM categories WHERE is_default = 1").get() as { id: number }
     expect(() => deleteCategory(db, defaultCategory.id)).toThrow("default")
     const cat = createCategory(db, { name: "Disposable", color: "#ffffff" })
-    // Deleting a tag's category drops it from the tag; the tag stays.
     const keep = createCategory(db, { name: "Kept", color: "#ffffff" })
     const tag = createTag(db, { name: " scoped ", color: "#ffffff", categoryIds: [cat, keep] })
     deleteCategory(db, cat)

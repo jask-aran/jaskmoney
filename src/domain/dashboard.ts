@@ -6,11 +6,10 @@ interface CategorySpend {
   categoryId: number | null
   name: string
   color: string
-  amount: number // positive spend
+  amount: number
   pct: number
 }
 
-/** Expense totals by category (debits only). Excludes IGNORE-tagged rows. */
 export function computeCategorySpend(
   rows: Transaction[],
   categories: Category[],
@@ -42,19 +41,14 @@ export function computeCategorySpend(
 }
 
 export interface CategoryGroupSpend {
-  /** The group's category (the parent, or the category itself). */
   categoryId: number | null
   name: string
   color: string
   amount: number
   pct: number
-  /** Subcategories with spending, largest first; empty for a category that
-   * has no group (e.g. Uncategorised). */
   children: CategorySpend[]
 }
 
-/** Roll category spend up into top-level groups (a category's parent, or the
- * category itself when it has none), largest group first. */
 export function groupCategorySpend(list: CategorySpend[], categories: Category[]): CategoryGroupSpend[] {
   const byId = new Map(categories.map((c) => [c.id, c]))
   const groups = new Map<string, CategoryGroupSpend>()
@@ -81,14 +75,10 @@ export interface CategoryLine {
   label: string
   color: string
   amount: number
-  /** Share of total spending; null for a subcategory line. */
   pct: number | null
   child: boolean
 }
 
-/** Up to `maxLines` display lines: every group (largest first) gets one,
- * and the spare lines go to the largest subcategories overall, each shown
- * under its group. */
 export function fitCategoryLines(groups: CategoryGroupSpend[], maxLines: number): CategoryLine[] {
   const shown = groups.slice(0, Math.max(0, maxLines))
   const spare = Math.max(0, maxLines - shown.length)
@@ -99,22 +89,18 @@ export function fitCategoryLines(groups: CategoryGroupSpend[], maxLines: number)
   ])
 }
 
-/** Whole dollars: "$1,478", "-$20". */
 export function formatWholeMoney(n: number): string {
   const rounded = Math.round(Math.abs(n))
   const sign = n < 0 && rounded !== 0 ? "-" : ""
   return `${sign}$${wholeDollars.format(rounded)}`
 }
 
-/** One formatter: toLocaleString builds one per call (charts and lists call this hundreds of times a frame). */
 const wholeDollars = new Intl.NumberFormat("en-AU")
 
-/** Whole dollars with an explicit sign for gains: "+$1,680", "-$40", "$0". */
 export function signedWholeMoney(n: number): string {
   return n > 0.5 ? `+${formatWholeMoney(n)}` : formatWholeMoney(n)
 }
 
-/** Daily debit totals between start/end inclusive. */
 export function dailySpendSeries(
   rows: Transaction[],
   startISO: string,
@@ -140,14 +126,11 @@ export function dailySpendSeries(
   return { dates, values }
 }
 
-/** Running totals of `values`. */
 export function cumulative(values: number[]): number[] {
   let sum = 0
   return values.map((v) => (sum += v))
 }
 
-/** Totals per configured week; the first and last weeks may be partial
- * (their `days` say how many of `dates` they cover). */
 export function weeklyTotals(dates: string[], values: number[], weekStart: WeekStart = "monday"): Array<{ startISO: string; total: number; days: number }> {
   const weeks: Array<{ startISO: string; total: number; days: number }> = []
   dates.forEach((iso, i) => {

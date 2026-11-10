@@ -1,15 +1,6 @@
 import { wrapText } from "./textLayout"
 import { JQL, JQL_EXAMPLE, JQL_SUMMARY, keeps, type Row } from "../domain/filterLanguage"
 
-/**
- * F1 in the search bar: JQL (domain/filterLanguage) laid out for people.
- * The brief version first: the language in a sentence, an example and what
- * it finds, the terms, precedence and the gotchas (wrong input, why, the
- * fix). `m` shows the full version: the grammar, how input is read and
- * matched, what happens when it doesn't parse, examples; the same text the
- * rule writer's model gets. Lines of coloured parts, each at most
- * SEARCH_HELP_WIDTH wide; the dialog scrolls them when the screen is short.
- */
 export type HelpTone = "head" | "key" | "text" | "muted"
 export type HelpLine = Array<{ text: string; tone: HelpTone }>
 
@@ -24,8 +15,6 @@ function searchHelpLines(full: boolean, width = SEARCH_HELP_WIDTH): HelpLine[] {
     [{ text: `  ${JQL_EXAMPLE.means}`, tone: "muted" }],
   ]
   const shown = (r: Row) => keep(r) && (full || !!r.brief)
-  // One column for every table, as wide as the widest term shown and a
-  // gap, unless that leaves the meanings too little room.
   const terms = JQL.filter((section) => full || section.brief).flatMap((section) => section.blocks).flatMap((b) => (b.kind === "rows" || b.kind === "gotchas" ? b.rows.filter(shown) : []))
   const column = Math.min(Math.max(...terms.map((r) => r.write.length)) + 4, 26)
   for (const section of JQL) {
@@ -37,11 +26,9 @@ function searchHelpLines(full: boolean, width = SEARCH_HELP_WIDTH): HelpLine[] {
       for (const row of block.rows.filter(shown)) {
         const fix = block.kind === "gotchas" && "fix" in row ? `→ ${row.fix}` : ""
         const lead = `  ${row.write}`
-        // The fix stays whole: after the meaning when it fits, else under it.
         const parts = wrapText(row.means, width - column)
         if (fix && parts.at(-1)!.length + 2 + fix.length <= width - column) parts[parts.length - 1] += `  ${fix}`
         else if (fix) parts.push(fix)
-        // A term wider than the column sits on its own line.
         if (lead.length >= column) out.push([{ text: lead, tone: "key" }])
         parts.forEach((part, n) => {
           const left = n === 0 && lead.length < column ? lead.padEnd(column) : " ".repeat(column)

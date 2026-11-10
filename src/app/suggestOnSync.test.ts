@@ -9,7 +9,6 @@ import { testEnv } from "../testing/scoped"
 import { newSuggestionsNote, suggestNew } from "./suggest"
 import { runSync } from "./sync"
 
-/** A database file (so a restart can be tested), CSV rows, no keys, no network. */
 function setup() {
   testEnv("JASKMONEY_JEV_TOKEN", "")
   testEnv("JASKMONEY_UP_TOKEN", "")
@@ -22,7 +21,6 @@ function setup() {
   db.query("INSERT INTO categories (id, name, color) VALUES (100, 'Test food', '#fff')").run()
   const add = (id: number, description: string, categoryId: number | null = null) =>
     db.query("INSERT INTO transactions (id, date_raw, date_iso, amount, description, category_id, account_id, source) VALUES (?, 'x', '2026-10-01', -5, ?, ?, 100, 'csv')").run(id, description, categoryId)
-  // Three Shop rows in Test food: history settles any new Shop row.
   add(1, "Shop", 100); add(2, "Shop", 100); add(3, "Shop", 100)
   add(4, "Shop"); add(5, "Shop")
   data.refresh()
@@ -53,7 +51,6 @@ test("a dismissed tag candidate stays dismissed for that tag, after a restart to
   await data.openTagReview({ tagId: null, name: "SHOP RUNS", categoryIds: [], about: null }, ai)
   expect(data.state.tagReview!.candidates[4]).toBeUndefined()
   expect(Object.keys(data.state.tagReview!.candidates)).toHaveLength(4)
-  // Another tag isn't affected.
   await data.openTagReview({ tagId: null, name: "other", categoryIds: [], about: null }, ai)
   expect(data.state.tagReview!.candidates[4]).toBeDefined()
   data.closeTagReview()
@@ -63,12 +60,10 @@ test("in the background, only new waiting rows are suggested, each once a sessio
   const { db, add } = setup()
   saveSuggestions(db, [{ transactionId: 4, categoryId: 100, confidence: 0.9, source: "jev" }])
   data.refresh()
-  // Row 5 only: 4 has one.
   expect(await suggestNew(data)).toBe(1)
   expect(await suggestNew(data)).toBe(0)
   add(6, "Shop")
   data.refresh()
-  // No Up token: the timed sync still suggests, and says so.
   await runSync(ui, data, { manual: false })
   expect(data.state.suggestions[6]).toMatchObject({ categoryId: 100, source: "history" })
   expect(ui.state.status).toBe("1 new suggestion (i to review)")

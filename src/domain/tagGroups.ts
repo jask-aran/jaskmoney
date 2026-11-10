@@ -6,13 +6,9 @@ import type { Transaction } from "./types"
 
 export interface TagGroup {
   kind: "trip" | "recurring"
-  /** Suggested tag name. */
   name: string
-  /** One line describing the group. */
   detail: string
-  /** Rows the tag would go on and how sure, ordered by id ascending. */
   rows: Array<{ id: number; confidence: number }>
-  /** Trip only: first and last day of in-person spending (YYYY-MM-DD). */
   start?: string
   end?: string
 }
@@ -40,7 +36,6 @@ const currencyOf = (row: Transaction) => row.foreignAmount?.trim().split(/\s+/)[
 const inPerson = (row: Transaction) => !!row.cardMethod && row.cardMethod !== "ECOMMERCE" && row.cardMethod !== "CARD_ON_FILE"
 const byDate = chronological
 
-/** Inclusive trip bounds for nearby bookings and refunds. */
 export function tripWindow(start: string, end: string): { from: string; to: string } {
   return { from: addDays(start, -3), to: addDays(end, 14) }
 }
@@ -88,10 +83,7 @@ export function detectTrips(transactions: readonly Transaction[]): TagGroup[] {
 interface RegularCharges {
   name: string
   cadence: Cadence
-  /** Oldest first. */
   charges: Transaction[]
-  /** The payments, oldest first: a day's charges as one (a payment split
-   * in two is still one), positive. */
   payments: Array<{ dateISO: string; amount: number }>
 }
 
@@ -111,11 +103,6 @@ export function median(values: number[]): number {
   return sorted.length % 2 ? (sorted[middle] ?? 0) : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
 }
 
-/** Payments to one description at a steady cadence (3 or more, three
- * quarters of the gaps in the cadence's range) and a steady amount (two
- * thirds within 20% of the latest or, before a price change, of the usual
- * then). A day's charges are one payment. Money in isn't, nor payments to
- * people unless `people` (rent paid by transfer). */
 export function regularCharges(transactions: readonly Transaction[], { people = false } = {}): RegularCharges[] {
   const merchants = groupByDescription(transactions.filter((row) => !(row.amount >= 0 || (!people && row.transactionType && PERSON_TO_PERSON.has(row.transactionType)))))
   const regular: RegularCharges[] = []
@@ -133,8 +120,6 @@ export function regularCharges(transactions: readonly Transaction[], { people = 
     const cadence = CADENCES.find(({ min, max }) => gap >= min && gap <= max
       && gaps.filter((value) => value >= min && value <= max).length / gaps.length >= 0.75)
     if (!cadence) continue
-    // Steady: near the latest price, or near the usual among the rest (the
-    // price before it changed).
     const near = (amount: number, to: number) => Math.abs(amount - to) <= to * 0.2
     const latest = payments.at(-1)!.amount
     const before = payments.filter((p) => !near(p.amount, latest)).map((p) => p.amount)

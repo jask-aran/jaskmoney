@@ -13,24 +13,11 @@ import { createBudgetCalendar, createBudgetHistory, createBudgetInputs, createBu
 
 export function createBudgetLayout(input: Pick<ReturnType<typeof createBudgetInputs>, "dims"> & { props: { focused: SectionId } }) {
   const { dims, props } = input
-  // Sizes: tab bar + gap (2) and status + footer (2) off the height. Wide,
-  // the chart and the budgets share the left and the categories run down
-  // the right; narrow, they stack.
   const body = () => Math.max(16, dims().height - 4)
-  // The Overview's breakpoint and its columns; the Budgets pane takes the
-  // side column (up to SIDE_MAX: Up's longest names fit), narrow the width.
   const columns = createMemo(() => tabColumns(dims().width, { max: SIDE_MAX, share: 0.4, narrow: (width) => width }))
   const wide = () => columns().wide
   const categoriesWidth = () => columns().side
   const mainWidth = () => columns().main
-  // The layouts. Wide: the main column, then a side column with the
-  // cycle's calendar over the Budgets pane. Two columns (split screen): the
-  // budget pane on top of the main column and a cycle pane under it where
-  // there's height for both; the calendar the budget pane's height, so
-  // Budgets starts on the cycle pane's line. Three columns (full screen,
-  // the main column fits two panes of GRID_PANE_MIN, columns.ts): the budget pane
-  // across the top, two cycle panes under it. Narrow: one column, the
-  // budget pane, the calendar on a tall terminal, the Budgets pane.
   const grid = () => columns().grid
   const halfLeft = () => columns().left
   const halfRight = () => columns().right
@@ -42,12 +29,7 @@ export function createBudgetLayout(input: Pick<ReturnType<typeof createBudgetInp
   const cyclePaneHeight = (_pane: number) => (grid() ? bottomQuarter() : body() - chartHeight())
   const chartWidth = () => mainWidth()
   const cyclePaneWidth = (pane: number) => (grid() ? (pane === 0 ? halfLeft() : halfRight()) : mainWidth())
-  // The Budgets pane: the side column's full height; narrow, under the budget pane.
   const categoriesHeight = () => (wide() ? body() : Math.max(5, body() - chartHeight()))
-  // The panes the keys and jumps reach follow the layout; focus on one
-  // that's gone goes back to the budgets.
-  // The list is the first cycle pane's Categories view (the tab's home),
-  // or without a cycle pane, the Budgets pane's under the plan.
   const listInPane = () => cyclePanes() > 0 && ui.state.budgetCycleViews[0] === CATEGORIES
   const listInSide = () => cyclePanes() === 0
   const sideId = (): SectionId => (listInSide() ? "bud.categories" : "bud.plan")
@@ -66,30 +48,21 @@ export function createBudgetLayout(input: Pick<ReturnType<typeof createBudgetInp
 
 function createBudgetRegions(input: Pick<ReturnType<typeof createBudgetLayout>, "chartWidth" | "chartHeight" | "sideId" | "categoriesWidth" | "categoriesHeight" | "listInPane"> & Pick<ReturnType<typeof createBudgetChart>, "Chart"> & Pick<ReturnType<typeof createBudgetsPane>, "Categories"> & Pick<ReturnType<typeof createCycleCharts>, "CyclePane"> & Pick<ReturnType<typeof createCategoryList>, "CategoriesPane">) {
   const { chartWidth, chartHeight, Chart, sideId, categoriesWidth, categoriesHeight, Categories, listInPane, CyclePane, CategoriesPane } = input
-  // Sizes as accessors: a component's body runs once, so a number read here
-  // would keep its first value.
   const region = (id: SectionId, width: () => number, height: () => number, card: () => JSX.Element) => (
     <box ref={regionRef(id, "budgets")} width={width()} height={height()} flexShrink={0} onMouseDown={panePointer(id)}>{card()}</box>
   )
   const BudgetPane = () => region("bud.chart", chartWidth, chartHeight, () => <Chart />)
-  // Keyed on its id: a ref is taken once, and the pane is the list's or
-  // the plan's by the layout.
   const CategoriesCard = () => <Show when={sideId()} keyed>{(id: SectionId) => region(id, categoriesWidth, categoriesHeight, () => <Categories />)}</Show>
-  // The first cycle pane: the list (Categories) or a chart.
   const FirstCyclePane = () => <Show when={listInPane()} fallback={<CyclePane pane={0} />}><CategoriesPane /></Show>
   return { BudgetPane, CategoriesCard, FirstCyclePane }
 }
 
-/** Its rows with two lines a weekday (each day's amount under its number). */
 export const CALENDAR_TALL = 15
 
-/** The Budgets pane's widest useful size: Up's longest names fit. */
 const SIDE_MAX = 48
 
-/** Fewest rows a Budgets chart pane gets before the cycle pane gives way. */
 const CYCLE_PANE_MIN = 12
 
-/** A click on a card or pane focuses it. */
 export const panePointer = (id: SectionId) => onPointer((scope) => scope === "bar" || scope.startsWith("budgets"), () => ui.applyJump(id))
 
 export function BudgetsTab(props: { focused: SectionId }) {

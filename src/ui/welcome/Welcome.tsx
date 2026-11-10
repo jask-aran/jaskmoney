@@ -14,26 +14,9 @@ import { DemoReel } from "./Demos"
 import { leftLines, rightLines, type CardInputs } from "./card"
 import { railSegments, titleSpans } from "./header"
 
-/**
- * The first-run setup, full screen over the app (state/welcome is the
- * machine, app/welcome the effects). The title and the steps as a rail;
- * then either the tour (the app's own pieces playing on a made-up year,
- * ui/welcome/Demos) or a step's card: what to do on the left, and on the
- * right exactly what jaskmoney does with what you're connecting
- * (state/integrationUses).
- *
- * Text is drawn at full colour from the first frame. What moves (a
- * spinner, the token's caret, the title's light, the rail filling) runs on
- * one clock while the setup is open; nothing waits on it to be readable.
- */
 const FRAME_MS = 80
-/** The clock's step: half a FRAME_MS, so the title's light keeps its beat
- * exactly. 25 a second: the fastest tape (11 columns a second) moves under
- * half a column a step, so it still moves in even steps. */
 const CLOCK_MS = FRAME_MS / 2
 
-/** The backdrop's colours, faint over the canvas: its levels mixed once,
- * not per cell per frame. */
 const BACKDROP_LEVEL_INK: string[] = []
 export const BACKDROP_INK: BackdropInk = { level: (level) => BACKDROP_LEVEL_INK[level]!, up: "", down: "" }
 whenThemeChanges(() => {
@@ -56,10 +39,8 @@ function WelcomeScreen() {
   const rows = createMemo(() => welcomeRows(state(), ctx()))
   const { now, tick, since, spinner, caretOn } = useClock(state)
 
-  // ---- Layout.
   const height = () => Math.max(12, dims().height - 2)
   const tour = () => state().step === "tour"
-  // Side by side when there's room and a panel to show.
   const paneled = () => state().step === "up" || state().step === "ai" || state().step === "email"
   const wide = () => dims().width >= 112
   const cardWidth = () => Math.max(40, Math.min(dims().width - 4, wide() && paneled() ? 120 : 76))
@@ -68,7 +49,6 @@ function WelcomeScreen() {
   const rightWidth = () => (wide() ? inner() - leftWidth() - 3 : inner())
   const panelWidth = () => rightWidth() - (wide() ? 3 : 0)
 
-  // ---- A step's left column, and the right panel (ui/welcome/card).
   const card: CardInputs = { state, ctx, rows, spinner, caretOn }
   const left = createMemo((): Line[] => {
     const s = state(), w = leftWidth()
@@ -79,9 +59,6 @@ function WelcomeScreen() {
     return rightLines(card, s, w)
   })
 
-  // Below the card, as wide as there's room for. Height: the title, the
-  // rail and their gaps (5), the card and its border, a gap; at most about
-  // the table's size in the app, and taller where there's room.
   const reelWidth = () => Math.max(40, Math.min(dims().width - 4, 124))
   const reelHeight = () => Math.max(8, Math.min(30, height() - 5 - (left().length + 2) - 1))
 
@@ -101,7 +78,6 @@ function WelcomeScreen() {
           <Index each={backdrop()}>{(spans) => <StyledLine spans={spans()} bg={theme.canvas} />}</Index>
         </box>
       </Show>
-      {/* Over the backdrop: an absolute child paints after the flow, so the content takes a higher z. */}
       <box zIndex={1} flexDirection="column" alignItems="center">
       <WelcomeHeader tick={tick} state={state} ctx={ctx} since={since} />
       <box width={cardWidth()} border borderStyle="rounded" borderColor={tone.focus} backgroundColor={theme.canvas} paddingLeft={1} paddingRight={1} flexDirection={wide() ? "row" : "column"} gap={wide() ? 3 : 1} maxHeight={height() - 6} overflow="hidden" flexShrink={0}>
@@ -111,7 +87,6 @@ function WelcomeScreen() {
       </box>
       <Show when={tour()}>
         <box height={1} />
-        {/* Solid: the backdrop goes round the demo, not through it. */}
         <box backgroundColor={theme.canvas}>
           <DemoReel scene={state().demo} startedAt={state().demoAt} now={now()} trying={state().trying} width={reelWidth()} height={reelHeight()} />
         </box>
@@ -121,13 +96,7 @@ function WelcomeScreen() {
   )
 }
 
-// ---- The clock, while the setup is open: one for everything that moves
-// on it (the backdrop, the title's light, the rail, a spinner, the caret,
-// the tour's demo), so each of its steps is one frame drawn; clocks of
-// their own would each ask for frames of their own. The backdrop moves
-// on every step; the rest on every other one (`tick`, FRAME_MS).
 function useClock(state: () => WelcomeState) {
-  // A step: how many there have been, and when it came.
   const [clock, setClock] = createSignal({ step: 0, at: performance.now() })
   const timer = setInterval(() => setClock((c) => ({ step: c.step + 1, at: performance.now() })), CLOCK_MS)
   onCleanup(() => clearInterval(timer))
@@ -137,34 +106,22 @@ function useClock(state: () => WelcomeState) {
   createEffect(() => { void state().shown; shownAt = untrack(tick) })
   const since = () => tick() - shownAt
   const spinner = () => SPINNER[tick() % SPINNER.length]!
-  // The token's caret blinks: on for six ticks, off for six. The card is
-  // rebuilt when it blinks, not on every tick.
   const caretOn = createMemo(() => Math.floor(tick() / 6) % 2 === 0)
   return { now, tick, since, spinner, caretOn }
 }
 
-// ---- The setup's backdrop, behind every step: money marks drifting,
-// faint (BACKDROP_INK); the cards and the demo are solid over it.
-// Settings › Appearance's choice; b on the welcome page tries the next.
 function useBackdrop(state: () => WelcomeState, now: () => number, width: () => number, height: () => number) {
   const backdropId = (): BackdropId => welcomeBackdrop(state(), data.state.uiPrefs.backdrop)
-  // Behind every step, moving on each step of the clock.
   const backdropT = () => now() / 1000
-  // The tape's real prices, while it's the backdrop.
   createEffect(() => {
     if (backdropId() !== "ticker") return
     onCleanup(followTickers(ui))
   })
-  // Seconds since this backdrop began: a new one starts from its beginning
-  // (a ticker tape from empty, streaming in).
   const backdropSince = createMemo(on(backdropId, () => untrack(backdropT)))
-  // A frame's lines that are as they were stay the same lines (and a frame
-  // that changes nothing, the same frame): only what moved is drawn again.
   let drawn: StyledSpan[][] = []
   return createMemo(() => (drawn = keepSameLines(drawn, backdropLines(backdropId(), width(), height(), backdropT() - backdropSince(), BACKDROP_INK, state().tickers))))
 }
 
-/** The title (ui/welcome/header), a gap, the rail, a gap. */
 function WelcomeHeader(props: { tick: () => number; state: () => WelcomeState; ctx: () => WelcomeContext; since: () => number }) {
   return (
     <>
@@ -174,7 +131,6 @@ function WelcomeHeader(props: { tick: () => number; state: () => WelcomeState; c
       </box>
       <box height={1} />
       <box height={1} flexDirection="row">
-        {/* A step on the rail: a click goes there. */}
         <Index each={railSegments(props.state, props.ctx, props.since)}>{(segment) => (
           <box height={1} width={segment().width} flexShrink={0} onMouseDown={onPointer("welcome", () => welcomeJump(ui, data, segment().step))}>
             <StyledLine spans={segment().spans} bg={theme.canvas} />

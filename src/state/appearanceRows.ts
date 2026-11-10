@@ -4,13 +4,10 @@ import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
 import { DEFAULT_OPEN_RANGE, OPEN_RANGE_LABELS } from "../domain/timeframe"
 import type { UiPrefs } from "./settingsConfig"
 
-/** Approved port deviation: display settings live in Appearance. */
 type AppearanceRow = "theme" | "icons" | "xAxis" | "chartMotion" | "chartSpeed" | "chartCurve" | "chartLabels" | "openRange" | "backdrop"
 export const APPEARANCE_ROWS: readonly AppearanceRow[] = ["theme", "icons", "xAxis", "chartMotion", "chartSpeed", "chartCurve", "chartLabels", "openRange", "backdrop"]
 type AppearanceRowContext = Pick<UiPrefs, "theme" | "xAxis" | "chartMotion" | "chartSpeed" | "chartCurve" | "chartLabels" | "openRange" | "backdrop"> & { icons: boolean }
 
-/** A row's label and value; for a choice, which of how many it is (a
- * toggle's on or off as `on`). */
 interface AppearanceRowView { label: string; value: string; on?: boolean; choice?: { index: number; count: number } }
 
 export function appearanceRow(row: AppearanceRow, ctx: AppearanceRowContext): AppearanceRowView {
@@ -43,7 +40,6 @@ function appearanceLabel(row: AppearanceRow, ctx: AppearanceRowContext): { label
   }
 }
 
-/** A theme's name by id (the default's for none or an unknown one). */
 export function themeName(id: string | undefined): string {
   return (THEMES.find((t) => t.id === id) ?? THEMES.find((t) => t.id === DEFAULT_THEME)!).name
 }

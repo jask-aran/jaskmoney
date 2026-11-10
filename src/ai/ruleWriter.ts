@@ -6,16 +6,7 @@ import { RULE_AFTER, RULE_SHARE, type RuleOffer } from "../domain/ruleOffers"
 import { agentTool, runAgent, type AgentUsage } from "./harness"
 import type { Llm } from "./llm"
 
-/**
- * The general model writes category or tag rules from the history. It reads an
- * overview, looks at categories and tests expressions with read-only tools,
- * then proposes rules; each proposal is checked here against the same bar
- * the repeat heuristic uses (RULE_SHARE precision, RULE_AFTER rows already in
- * the category, not done by a rule already, not declined) before it is
- * offered. Nothing is made until you accept it.
- */
 export const RULE_WRITER_TURNS = 14
-/** History calls a run may make: after these it tests what it has. */
 const HISTORY_LOOKS = 10
 const PROPOSALS = 8
 
@@ -32,16 +23,13 @@ type ProposedRule = { name: string; expr: string; why: string } & ({ category: s
 
 interface RuleWriterResult {
   offers: RuleOffer[]
-  /** Proposals the check turned down, and why (shown in logs and tests). */
   rejected: { rule: ProposedRule; reason: string }[]
   usage: AgentUsage
   turns: number
-  /** The model's tool calls, in order (for tuning). */
   calls: { name: string; args: unknown }[]
   error?: string
 }
 
-/** What the model starts from: categories, where recent work went, what's waiting, the rules there are. */
 export function ruleWriterBrief(data: HistoryData, declined: RuleDecline[], focus?: string) {
   const recent = new Map<number, number>()
   for (const e of data.categoryLog) if (e.categoryId != null && e.how !== "rule") recent.set(e.categoryId, (recent.get(e.categoryId) ?? 0) + 1)
@@ -92,8 +80,6 @@ function createRuleWriterTools(data: HistoryData) {
   const categoryNamed = (name: string) => data.categories.find((c) => c.name.toLowerCase() === name.trim().toLowerCase())
   const { Type } = piAi()
   const tagNamed = (name: string) => data.tags.find((t) => t.name.toLowerCase() === name.trim().toLowerCase())
-  // Flat optional fields, checked in code: providers' tool schemas want a
-  // plain object (OpenAI refuses anyOf/allOf at the top).
   const target = {
     category: Type.Optional(Type.String({ description: "Exact category name (or tag, not both)" })),
     tag: Type.Optional(Type.String({ description: "Exact tag name (or category, not both)" })),
@@ -198,7 +184,6 @@ function checkRuleProposals(
     if (report.already_by_rules) { reject("rules already do it"); continue }
     if ((report.precision ?? 0) < RULE_SHARE) { reject(`precision ${report.precision ?? 0}`); continue }
     if (report.in_target < RULE_AFTER) { reject(`only ${report.in_target} rows in ${category.name}`); continue }
-    // Up (or sync, from Up's type) already categorises these, and none wait.
     if (!report.waiting && report.set_by_up >= report.in_target * RULE_SHARE) { reject("Up already categorises these"); continue }
     seen.add(rule.expr.toLowerCase())
     const found = findRows(data, rule.expr)

@@ -10,15 +10,8 @@ import { appToday } from "../../domain/days"
 import { categoryMark } from "../icons"
 
 const COLUMNS = { marker: 1, gap: 1, total: 12, count: 5, average: 12, last: 9, category: 22, note: 26 } as const
-/** Below this width the note column is left out. */
 const NOTE_FROM = 110
 
-/**
- * The Transactions table grouped by merchant: one row per merchant with its
- * signed total, row count, average, latest date, usual category and your
- * note (or a dim prompt for one), styled like the row table (cursor only;
- * selection and range belong to rows).
- */
 export function MerchantTable(props: {
   groups: MerchantGroup[]
   top: number
@@ -56,8 +49,6 @@ export function MerchantTable(props: {
       </text>
       <Show when={props.groups.length} fallback={<text fg={ink.note}>{props.empty}</text>}>
         <box flexGrow={1} flexDirection="column">
-          {/* As the transactions table: Index updates screen rows in place, and the
-              look is a memo, so a cursor move redraws two rows, not all. */}
           <Index each={windowRows()}>
             {(row, i) => {
               const g = row
@@ -96,7 +87,6 @@ export function MerchantTable(props: {
   )
 }
 
-/** "21 Oct" this year, "28 Jun 25" before it. */
 function lastSeen(iso: string): string {
   return iso.slice(0, 4) === appToday().slice(0, 4) ? shortDate(iso) : `${shortDate(iso)} ${iso.slice(2, 4)}`
 }

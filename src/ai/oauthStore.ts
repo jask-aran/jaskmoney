@@ -5,12 +5,6 @@ import type { Credential, CredentialInfo, CredentialStore } from "@earendil-work
 import { writeJsonAtomic } from "../storage/json"
 import { defaultSettingsConfigPath } from "../state/settingsConfig"
 
-/**
- * Browser sign-ins (OpenRouter, ChatGPT), kept by pi-ai's provider id in
- * oauth.json beside settings.json, owner-only (mode 600). pi-ai writes
- * through `modify` (login, token refresh); writes to the file are
- * serialized. Never rendered: the app only asks whether a provider is signed in.
- */
 export function oauthPath(): string {
   return join(dirname(defaultSettingsConfigPath()), "oauth.json")
 }
@@ -29,11 +23,6 @@ function writeAll(path: string, all: Record<string, Credential>): void {
   writeJsonAtomic(path, all)
 }
 
-/**
- * This installation's ID, made on first use and the same ever after (a file
- * beside oauth.json): Sign in with ChatGPT sends it to OpenAI as the agent
- * host's ID, and refuses to start without one.
- */
 export function installationId(path = join(dirname(oauthPath()), "installation-id")): string {
   const kept = existsSync(path) ? readFileSync(path, "utf8").trim() : ""
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(kept)) return kept
@@ -43,14 +32,10 @@ export function installationId(path = join(dirname(oauthPath()), "installation-i
   return id
 }
 
-/** Whether a provider has a stored sign-in (sync: for rows and hints). */
 export function signedIn(providerId: string, path = oauthPath()): boolean {
   return readAll(path)[providerId]?.type === "oauth"
 }
 
-/** One write at a time per file, across every store on it: each model
- * client makes its own store, and two token refreshes at once would each
- * write the file read before the other's. */
 const chains = new Map<string, Promise<unknown>>()
 function serial<T>(path: string, task: () => Promise<T>): Promise<T> {
   const next = (chains.get(path) ?? Promise.resolve()).then(task, task)

@@ -5,22 +5,17 @@ import { isOrdinaryFlow, isUncategorised } from "../domain/moneyRules"
 import type { CategorySuggestion, Transaction } from "../domain/types"
 import type { CoreContext, Session } from "./context"
 
-/** One round of category suggestions (suggestCategories in ./suggestions). */
 export async function suggestNow(ctx: CoreContext, ids: number[] | undefined, ai: Pick<JevClient, "judge"> | undefined, options: { replace?: boolean }): Promise<string | number> {
   const { state, refresh, transactions } = ctx
   const session = ctx.session()
   const database = session.db
-  // Whether anything since the last reload wrote to the database.
   const track = { wrote: false }
   try {
     const selected = ids ? new Set(ids) : null
-    // Rows whose suggestion was dismissed get no new one.
     const dismissed = loadDismissedSuggestionIds(database)
     const targets = transactions().filter((t) => isOrdinaryFlow(t) && isUncategorised(t) && !dismissed.has(t.id) && (options.replace ? !!state.suggestions[t.id] : !state.suggestions[t.id]) && (!selected || selected.has(t.id)))
     const enabled = !!ai || hasJev()
     const failures: string[] = []
-    // Which merchants' names don't say what was bought (eBay, Kmart): asked
-    // once per name, then kept.
     const asked = loadMerchantBreadth(database)
     const notes = loadMerchantNotes(database)
     const unasked = enabled ? unaskedMerchants(transactions(), asked) : []
@@ -37,14 +32,9 @@ export async function suggestNow(ctx: CoreContext, ids: number[] | undefined, ai
     if (!ctx.isCurrent(session)) return options.replace ? 0 : ""
     const breadth = merchantBreadth(transactions(), state.categories, asked)
     if (capStored(ctx, database, breadth)) track.wrote = true
-    // Each suggestion says whether it knew what its row bought (order emails).
     const knew = new Set(transactions().filter((t) => t.bought?.length).map((t) => t.id))
     const history = historySuggestions(transactions(), state.categories, new Set(targets.map((t) => t.id)), breadth).map((h) => (knew.has(h.transactionId) ? { ...h, knewBought: true } : h))
-    // A reload follows each write. With nothing written (the view opened
-    // again, every row already suggested) the clients already match the
-    // database, and a reload would rebuild everything that reads the rows.
     if (history.length) saveSuggestions(database, history)
-    // Suggestions and merchants' checks aren't in the rows: no row changed.
     if (history.length || track.wrote) { refresh([]); track.wrote = false }
     let fromJev = 0
     if (enabled) {
@@ -62,9 +52,6 @@ export async function suggestNow(ctx: CoreContext, ids: number[] | undefined, ai
   }
 }
 
-/** Jev's part of a round: the targets history didn't settle, each request's
- * suggestions saved as they arrive. How many it made; null when the database
- * changed meanwhile. */
 async function suggestFromJev(ctx: CoreContext, session: Session, round: {
   targets: Transaction[]; history: CategorySuggestion[]; ai: Pick<JevClient, "judge"> | undefined; options: { replace?: boolean }
   breadth: ReturnType<typeof merchantBreadth>; notes: ReturnType<typeof loadMerchantNotes>; failures: string[]; track: { wrote: boolean }
@@ -76,9 +63,6 @@ async function suggestFromJev(ctx: CoreContext, session: Session, round: {
   const targetIds = new Set(targets.map((t) => t.id))
   const settled = new Set(history.map((s) => s.transactionId))
   const remaining = transactions().filter((t) => targetIds.has(t.id) && !settled.has(t.id) && (options.replace ? !!state.suggestions[t.id] : !state.suggestions[t.id]) && isOrdinaryFlow(t) && isUncategorised(t))
-  // A request's answers arrive together: saved in one write and shown
-  // in one update. One at a time, each update re-sorts the table, and
-  // a few hundred answers hold the screen for seconds.
   let pending: CategorySuggestion[] = []
   const flush = () => {
     const arrived = pending
@@ -111,8 +95,6 @@ async function suggestFromJev(ctx: CoreContext, session: Session, round: {
   return fromJev
 }
 
-/** Hold stored suggestions to what their row can say: one made before a
- * merchant was known to be mixed (eBay at 100%) drops to a guess. */
 function capStored(ctx: CoreContext, database: NonNullable<typeof ctx.db>, breadth: Parameters<typeof suggestionCap>[1]) {
   const { state, set, transactions } = ctx
   const byId = new Map(transactions().map((t) => [t.id, t]))
@@ -121,7 +103,6 @@ function capStored(ctx: CoreContext, database: NonNullable<typeof ctx.db>, bread
     if (!s || !t) return []
     const capped = capSuggestion(s, suggestionCap(t, breadth))
     if (capped === s) return []
-    // Capped for want of items: once they're known, it's asked again.
     const { knewBought: _, ...rest } = capped
     return [t.bought?.length ? capped : rest]
   })

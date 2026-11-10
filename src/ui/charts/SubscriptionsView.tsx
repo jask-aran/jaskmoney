@@ -9,11 +9,6 @@ import { count, fit, shortDate, shortMoney, truncate } from "../text"
 import type { Span } from "../primitives/spans"
 import { StyledLine, type StyledSpan } from "../primitives/StyledLine"
 
-/* The Subscriptions view: regular payments, drawn in place of a chart (the
- * Budgets tab's chart pane, for the budget it follows). */
-
-/** The Subscriptions view's legend: how many, what they cost a month and
- * a year, what's due before payday, and what changed. */
 export function subscriptionsLegend(list: Subscription[], dueBeforePayday: number): Span[] {
   const active = list.filter((s) => !s.stopped)
   const changed = active.filter((s) => s.change).length
@@ -28,27 +23,15 @@ export function subscriptionsLegend(list: Subscription[], dueBeforePayday: numbe
 }
 
 const SUB_COLUMNS = { every: 12, charge: 10, month: 10, next: 11, change: 30 }
-/** Days the strip under the table looks ahead. */
 const SUB_AHEAD = 30
-/** A charge this many days off (or fewer) wants a look. */
 const SUB_SOON = 3
 
-/** Regular payments, one a line: its category's mark, what, how often, the
- * latest charge, a month's worth, the next charge (soon ones in caution),
- * and a price change. Stopped ones dimmed after the rest; more than fit end
- * in "… N more". Under the table, where there's room, the next 30 days as
- * a strip: a mark on each day a payment is due, its name under it where it
- * fits, and payday. */
 export function SubscriptionsView(props: { list: Subscription[]; width: number; rows: number; today: string; payday: string; progress?: number }) {
-  // Drawing in (progress 0–1): the rows drop in, then the strip sweeps
-  // from today to the month ahead.
   const p = () => props.progress ?? 1
   const rowsIn = () => Math.ceil(Math.min(1, p() / 0.5) * shown().length)
   const stripEdge = () => Math.min(1, Math.max(0, (p() - 0.35) / 0.65)) * props.width
   const showChange = () => props.width >= 80
   const nameWidth = () => Math.max(10, props.width - 2 - SUB_COLUMNS.every - SUB_COLUMNS.charge - SUB_COLUMNS.month - SUB_COLUMNS.next - (showChange() ? SUB_COLUMNS.change : 0))
-  // The strip takes a blank line and three of its own, when the table
-  // leaves them.
   const strip = () => props.rows - 1 - props.list.length >= 4
   const room = () => Math.max(0, props.rows - 1 - (strip() ? 4 : 0))
   const shown = createMemo(() => props.list.length > room() ? props.list.slice(0, Math.max(0, room() - 1)) : props.list)
@@ -72,7 +55,6 @@ export function SubscriptionsView(props: { list: Subscription[]; width: number; 
       }] : []),
     ]
   }
-  // The strip: days 0 to SUB_AHEAD spread over the width.
   const ahead = createMemo(() => upcomingCharges(props.list, props.today, addDays(props.today, SUB_AHEAD)))
   const colOf = (iso: string) => Math.round((daysBetween(props.today, iso) * (props.width - 1)) / SUB_AHEAD)
   const stripLines = createMemo((): StyledSpan[][] => {
@@ -92,7 +74,6 @@ export function SubscriptionsView(props: { list: Subscription[]; width: number; 
       const col = colOf(c.dateISO)
       const sub = props.list.find((s) => s.name === c.name)
       marks[col] = { text: "●", fg: colour(sub?.categoryId ?? null) }
-      // The full name where it fits, then shorter, then the amount alone.
       ;[`${c.name} ${shortMoney(c.amount)}`, `${truncate(c.name, 12)} ${shortMoney(c.amount)}`, shortMoney(c.amount)].some((text) => put(names, col, text, ink.label))
     }
     put(dates, 0, "today", theme.chartToday)

@@ -3,7 +3,6 @@ import { openDb, loadCategories, uncategorisedCategoryId, recordBudget, saveBudg
 import { DEMO_CATEGORIES, type DemoData } from "../domain/demo"
 import { appToday } from "../domain/days"
 
-/** Evaluation categories for hidden rows; missing or corrupt files yield no truth. */
 export function readDemoTruth(path: string): Map<number, string> {
   let text: string
   try { text = readFileSync(`${path}.truth.json`, "utf8") } catch (error) {
@@ -24,7 +23,6 @@ export function readDemoTruth(path: string): Map<number, string> {
   return entries
 }
 
-/** Destructive by contract: call only with the separate demo database path. */
 export function seedDemoDb(path: string, demo: DemoData): void {
   for (const file of [path, `${path}-wal`, `${path}-shm`, `${path}.truth.json`]) {
     try { unlinkSync(file) } catch (error) {
@@ -43,7 +41,6 @@ export function seedDemoDb(path: string, demo: DemoData): void {
       DEMO_CATEGORIES.forEach((c, i) => upsert.run(c.name, c.color, i, 0, Number(!!c.notSpending), Number(!!c.income)))
       const categoryIds = new Map(loadCategories(db).map(c => [c.name, c.id]))
       const uncategorisedId = uncategorisedCategoryId(db)
-      // Uncategorised after the demo's tree, so no group's categories are split by it.
       db.query("UPDATE categories SET sort_order = ? WHERE id = ?").run(DEMO_CATEGORIES.length, uncategorisedId)
       for (const c of DEMO_CATEGORIES) {
         const parentId = c.parent === null ? null : categoryIds.get(c.parent)
@@ -77,7 +74,6 @@ export function seedDemoDb(path: string, demo: DemoData): void {
           t.rawText, t.cardMethod, dateRaw)
         if (categoryId === uncategorisedId && t.truthCategory !== null) truth[String(result.lastInsertRowid)] = t.truthCategory
       }
-      // Only remove unused defaults from this freshly created demo database.
       const names = new Set(DEMO_CATEGORIES.map(c => c.name))
       const remove = db.query(`DELETE FROM categories WHERE id = ? AND is_default = 0
         AND NOT EXISTS (SELECT 1 FROM transactions WHERE category_id = categories.id)

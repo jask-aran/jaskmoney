@@ -1,15 +1,5 @@
-/** Requests to the provider in flight at once. Up has no batch
- * endpoint, so each row is its own request; the client backs off when Up
- * says 429. Category and tag pushes alike. */
 export const PUSH_CONCURRENCY = 4
 
-/**
- * Push changes for `ids` (each once, started in order) to the provider,
- * `concurrency` at a time (default one). `prepare` makes a row's local-only
- * change itself and returns null, or returns the push (resolving to the
- * local rows it changed); a failed push is collected, not thrown.
- * `onSettled` runs after each push, `complete` after the last one.
- */
 export async function pushTransactions(
   ids: number[],
   prepare: (id: number) => (() => Promise<number>) | null,
@@ -28,8 +18,6 @@ export async function pushTransactions(
     while (next < pushes.length) {
       const push = pushes[next++]!
       try {
-        // Await first: `changed += await` would read changed before the
-        // await and lose concurrent pushes' counts.
         const n = await push()
         changed += n
         pushed++
@@ -39,8 +27,6 @@ export async function pushTransactions(
       onSettled?.()
     }
   }
-  // With nothing to push this runs before the first await, so a local-only
-  // change shows at once.
   if (pushes.length) await Promise.all(Array.from({ length: Math.min(concurrency, pushes.length) }, worker))
   complete?.()
   return { changed, pushed, failures }

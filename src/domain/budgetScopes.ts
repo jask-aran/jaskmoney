@@ -11,15 +11,11 @@ export function scopeKey(scope: BudgetScope): string {
   return scope.kind === "overall" ? "overall" : scope.kind === "account" ? `account:${scope.accountId}` : `category:${scope.categoryId}`
 }
 
-/** The scope a scopeKey names. */
 export function scopeOfKey(key: string): BudgetScope {
   const [kind, id] = key.split(":")
   return kind === "account" ? { kind, accountId: Number(id) } : kind === "category" ? { kind, categoryId: Number(id) } : { kind: "overall" }
 }
 
-/** What a budget can cover: overall spending, a spending account, or a
- * spending category (each group, then its subcategories, then the remaining
- * local categories). Not-spending categories are left out. */
 export function budgetScopeOptions(accounts: Account[], categories: Category[]): BudgetScopeOption[] {
   const options: BudgetScopeOption[] = [{ key: "overall", label: "Overall spending", scope: { kind: "overall" } }]
   for (const a of accounts.filter((a) => accountRole(a) === "spending")) {

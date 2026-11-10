@@ -101,7 +101,7 @@ describe("computePosition", () => {
 describe("computePeriodFlows", () => {
   const rows = [
     row(1000, { income: true }), row(-100, { status: "HELD" }),
-    row(-200, { transferAccountId: 99 }), // Untracked rent account is spending.
+    row(-200, { transferAccountId: 99 }),
     row(-500, { internal: true, excluded: true, transferAccountId: 3 }),
     row(500, { accountId: 3, internal: true, excluded: true, transferAccountId: 1 }),
     row(100, { internal: true, excluded: true, transferAccountId: 3 }),
@@ -109,12 +109,10 @@ describe("computePeriodFlows", () => {
     row(-50, { internal: true, excluded: true, transferAccountId: 2 }),
     row(50, { accountId: 2, internal: true, excluded: true, transferAccountId: 1 }),
     row(-999, { tagNames: ["iGnOrE"] }), row(999, { tagNames: ["IGNORE"] }),
-    // Interest: a saver change, and income when all spending is in scope.
     row(5, { accountId: 3, income: true }),
     row(-2, { accountId: 4, tagNames: ["IGNORE"] }),
-    // Uncategorised money in (and $0) is neither spending nor income.
     row(-10, { accountId: 2 }), row(20, { accountId: 2 }), row(0),
-    row(30, { categoryId: 7, categoryName: "Groceries" }), // A refund reduces spending.
+    row(30, { categoryId: 7, categoryName: "Groceries" }),
     row(999, { accountId: null }), row(-999, { accountId: 99 }),
   ]
 

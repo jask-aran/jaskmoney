@@ -48,7 +48,6 @@ test("esc, or leaving the tab, puts the saved theme back", async () => {
   expect(themeId).toBe(DEFAULT_THEME)
   expect(canvas()).toEqual(RGBA.fromHex("#11111b").toInts())
   expect(data.state.uiPrefs.theme).toBeUndefined()
-  // Again, closed by switching tabs.
   handleKey(ui, key("return"), data)
   handleKey(ui, key("j"), data)
   await frame()

@@ -7,7 +7,6 @@ const text = (spans: Span[]) => spans.map((s) => s.text).join("")
 const W = 40
 
 test("spending more than came in, sources past the gap cover only the gap, shared by their sizes; none from Spending's balance", () => {
-  // $1,000 in, $1,300 spent: Rainy day's $900 drawn on covers just the $300.
   const [above] = sourcesBars(W, 1000, 1300, [{ amount: 900, color: "#0af", name: "Rainy day", figure: "#0af" }])
   expect(text(above!)).toMatch(/\$1,000 in\s+\$300 Rainy day/)
   expect(text(above!)).not.toMatch(/other|Spending/)
@@ -51,6 +50,5 @@ test("the net's flow is what was sent to each saver, then kept: the Budgets save
     rows: [sent(7, 900), sent(8, 300), transaction({ amount: 100, internal: true, excluded: true, transferAccountId: 8 })],
     savers: [{ accountId: 7, name: "Trip" }, { accountId: 8, name: "Rainy day" }],
   })
-  // $900 to Trip, $200 net to Rainy day; of the $2,000 net, $900 kept.
   expect(text(lines.at(-1)!)).toMatch(/\$900 Trip\s+\$200 Rainy day\s+\$900 kept/)
 })

@@ -7,7 +7,6 @@ import { parseDay } from "../domain/days"
 
 interface CsvRecord { fields: string[]; line: number }
 
-/** RFC4180-style records, including escaped quotes and quoted newlines. */
 function parseCsvRecords(text: string, delimiter: string): { records: CsvRecord[]; errors: ImportPreviewError[] } {
   const records: CsvRecord[] = []
   const errors: ImportPreviewError[] = []
@@ -66,7 +65,6 @@ function existingKeys(db: Db, accountId: number): Set<string> {
   return result
 }
 
-/** File readers receive only a checked CSV path; supplied text needs no file access. */
 export function buildImportPreview(db: Db, text: string | ((path: string, encoding: "utf8") => string), path: string, profile: ImportProfile): ImportPreview {
   if (typeof text === "function") {
     try {

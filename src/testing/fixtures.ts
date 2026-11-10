@@ -1,9 +1,6 @@
 import type { Account, Category, Transaction } from "../domain/types"
 import type { JevClient } from "../ai/jev"
 
-/** A Jev fake that answers the merchant-breadth questions itself (every
- * name `p`, single by default) and hands the rest to `jev`: tests of other
- * questions see only theirs. */
 export function answeringMerchants(jev: Pick<JevClient, "judge">, p = 0.1): Pick<JevClient, "judge"> {
   return { async judge(questions, state) {
     const isMerchant = (q: (typeof questions)[string]) => typeof q.instructions === "object" && "merchant" in q.instructions
@@ -14,13 +11,6 @@ export function answeringMerchants(jev: Pick<JevClient, "judge">, p = 0.1): Pick
   } }
 }
 
-/**
- * Domain fixtures for tests: complete objects from a few overrides. Defaults
- * are neutral; a test that depends on a value passes it explicitly. Every
- * call returns fresh arrays.
- */
-/** A settled $10 Up debit on 2026-10-05 in account 1 ("A"), uncategorised.
- * `dateRaw` follows `dateISO` unless given. */
 export function transaction(overrides: Partial<Transaction> = {}): Transaction {
   const dateISO = overrides.dateISO ?? "2026-10-05"
   return {
@@ -33,8 +23,6 @@ export function transaction(overrides: Partial<Transaction> = {}): Transaction {
   }
 }
 
-/** An active, synced Up transactional debit account with a $100 balance;
- * name ("Account <id>") and sortOrder follow `id` (default 1). */
 export function account(overrides: Partial<Account> = {}): Account {
   const id = overrides.id ?? 1
   return {
@@ -44,8 +32,6 @@ export function account(overrides: Partial<Account> = {}): Account {
   }
 }
 
-/** A local, top-level, non-default category; name ("Category <id>") and
- * sortOrder follow `id` (default 1). */
 export function category(overrides: Partial<Category> = {}): Category {
   const id = overrides.id ?? 1
   return {

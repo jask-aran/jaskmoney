@@ -11,10 +11,6 @@ import type { SavedFilter } from "../domain/types"
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
 
-/**
- * Actions a key and a palette command (app/commands) both run: one body
- * each, so a key and its command can't drift apart.
- */
 export function reportError(ui: UiStore, error: unknown): void {
   ui.setStatus(error instanceof Error ? error.message : String(error), true)
 }
@@ -28,14 +24,12 @@ export function resetTransactionCursors(ui: UiStore, data?: DataStore): void {
   ui.setState({ merchantCursor: 0, merchantTop: 0 })
 }
 
-/** No filter on the table (or the merchants), cursors back to the top. */
 export function clearTransactionFilter(ui: UiStore, data: DataStore): void {
   data.clearFilter()
   resetTransactionCursors(ui, data)
   ui.setStatus("Filter cleared")
 }
 
-/** The Transactions table, focused (from any tab). */
 export function toTransactions(ui: UiStore): void {
   if (ui.state.activeTab !== "manager") ui.switchTab("manager")
   ui.setState({ txnView: "rows", focusedSection: "mgr.transactions" })
@@ -57,8 +51,6 @@ export function toggleWeekStart(ui: UiStore, data: DataStore): void {
   settleData(ui, data.saveUiPrefs({ weekStart: data.state.weekStart === "monday" ? "sunday" : "monday" }), () => ui.setStatus(data.state.weekStart === "sunday" ? "Weeks start on Sunday" : "Weeks start on Monday"))
 }
 
-/** Demo mode on (made-up rows, the real database untouched) or off;
- * resolves once it's done (or failed, which the status line says). */
 export function toggleDemo(ui: UiStore, data: DataStore): Promise<void> {
   const done = (async () => {
     if (data.state.demo) { await data.leaveDemo(); ui.setStatus("Demo mode off · your data") }
@@ -70,13 +62,10 @@ export function toggleDemo(ui: UiStore, data: DataStore): Promise<void> {
   return done.catch(() => {})
 }
 
-/** Open the theme picker on the theme in use (Settings › Appearance › Theme, the palette). */
 export function openThemePicker(ui: UiStore, data: DataStore): void {
   ui.setState({ themePicker: { cursor: Math.max(0, THEMES.findIndex((t) => t.id === (data.state.uiPrefs.theme ?? DEFAULT_THEME))) } })
 }
 
-/** Keep theme `id`: saved, then the picker closes (closing it otherwise
- * puts the saved theme back: App). */
 export function keepTheme(ui: UiStore, data: DataStore, id: string): void {
   settleData(ui, data.saveUiPrefs({ theme: id }), () => {
     ui.setState({ themePicker: null })
@@ -88,7 +77,6 @@ export function toggleXAxis(ui: UiStore, data: DataStore): void {
   settleData(ui, data.saveUiPrefs({ xAxis: !data.state.uiPrefs.xAxis }), () => ui.setStatus(data.state.uiPrefs.xAxis ? "Charts draw an x-axis line" : "Charts without an x-axis line"))
 }
 
-/** A saved filter on the table, its use recorded; false when it doesn't parse. */
 export function applySavedFilter(ui: UiStore, data: DataStore, filter: SavedFilter): boolean {
   const result = data.commitFilter(filter.expr)
   if (!result.ok) { ui.setStatus(result.err, true); return false }
@@ -98,16 +86,12 @@ export function applySavedFilter(ui: UiStore, data: DataStore, filter: SavedFilt
   return true
 }
 
-/** Account reset matrix: accounts clears row position and targets; rows and
- * merchants also clear merchant position; Overview preserves both.
- * Approved deviation from Go: changing the table's account clears hidden targets. */
 export function changeAccountScope(ui: UiStore, data: DataStore, selection: AccountSelection, origin: "accounts" | "rows" | "merchants" | "overview"): void {
   if (origin !== "overview") ui.setState({ managerCursor: 0, managerTop: 0, selectedIds: {}, range: null })
   data.setAccountSelection(selection)
   if (origin === "rows" || origin === "merchants") resetTransactionCursors(ui, data)
 }
 
-/** The table shows an account (a row of the accounts pane). */
 export function showAccount(ui: UiStore, data: DataStore, row: AccountRow): void {
   changeAccountScope(ui, data, row.selection, ui.state.txnView)
   ui.setStatus(`Showing ${row.label}`)
@@ -117,7 +101,6 @@ export function runUndo(ui: UiStore, data: DataStore): void {
   void data.undo().then((summary) => ui.setStatus(summary, summary.includes("failed:") || summary.includes("waiting for Up")), (error) => reportError(ui, error))
 }
 
-/** The general model writes rules from the history (the offers list's last row). */
 export function askForRules(ui: UiStore, data: DataStore): void {
   if (data.state.writingRules) return
   ui.setStatus(`Asking ${llmModelId()} for rules…`)

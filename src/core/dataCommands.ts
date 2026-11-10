@@ -37,7 +37,6 @@ export class DataCommands {
     commitPreview: (p: { preview: ImportPreview; skipDuplicates: boolean }) => this.commitPreview(p.preview, p.skipDuplicates)
   }
   accountsCommands = {
-    /** Returns the number of transactions removed when switching sync off. */
     setAccountSync: (p: { accountId: number; enabled: boolean }) => this.ctx.mutate((db) => setAccountSyncEnabled(db, p.accountId, p.enabled))
   }
   clearCommands = {

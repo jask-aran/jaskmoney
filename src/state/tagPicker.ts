@@ -4,12 +4,6 @@ import type { Category, Tag, Transaction } from "../domain/types"
 import { ink } from "../theme"
 import type { PickerItem } from "./settingsForm"
 
-/**
- * The tag picker's rows, shared by its rendering and its keys: tags for a
- * target transaction's category, then tags without categories, then tags
- * for other categories (dimmed), each section fuzzy-filtered by `query`;
- * then a create row when the query names no existing tag.
- */
 export function tagPickerItems(tags: Tag[], categories: Category[], transactions: Transaction[], targets: number[], query: string): PickerItem[] {
   const targetRows = transactions.filter((t) => targets.includes(t.id))
   const section = (t: Tag) => !t.categoryIds.length ? "Global" : targetRows.some(tagCovers(t, categories)) ? "Scoped" : "Out of scope"
@@ -30,7 +24,6 @@ export function tagPickerItems(tags: Tag[], categories: Category[], transactions
   return rows
 }
 
-/** Whether all, some or none of the targets carry the tag. */
 export function tagPickerState(transactions: Transaction[], targets: number[], tagId: number): "all" | "some" | "none" {
   const hits = targets.filter((id) => transactions.find((t) => t.id === id)?.tagIds.includes(tagId)).length
   return hits === 0 ? "none" : hits === targets.length ? "all" : "some"

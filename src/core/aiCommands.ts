@@ -18,12 +18,8 @@ import type { CallContext } from "./core"
 
 export class AiCommands {
   constructor(private readonly ctx: CoreRuntime) {}
-  // Prompts stay in the core; clients send only the pasted code.
   signIns = new Map<LlmProvider, { paste: ((value: string) => void) | null }>()
 
-  /** Save a row's note. A waiting row's suggestion is asked again with it
-   * (Jev reads it as your_note; saving again re-asks, for a note written
-   * before this); resolves to whether it was. */
   updateTransactionNotes = (id: number, notes: string, ai?: Pick<JevClient, "judge">): Promise<boolean> => {
     this.ctx.mutate((db) => setTransactionNotes(db, id, notes))
     const t = this.ctx.transactions().find((row) => row.id === id)
@@ -35,7 +31,6 @@ export class AiCommands {
       p.replace ? this.ctx.suggestions.suggestCategories(p.ids ?? [], cx.ai, { replace: true }) : this.ctx.suggestions.suggestCategories(p.ids, cx.ai),
     resuggestLike: (p: { ids: number[] }, cx: CallContext) => this.ctx.suggestions.resuggestLike(p.ids, cx.ai),
     setMerchantNote: (p: { description: string; note: string }, cx: CallContext) => this.ctx.suggestions.setMerchantNote(p.description, p.note, cx.ai),
-    /** `session`: the one the lookups were made for (CoreState.session). */
     recordPurchases: (p: { lookups: PurchaseLookup[]; session?: number }, cx: CallContext) => this.ctx.suggestions.recordPurchases(p.lookups, cx.ai, p.session),
     acceptSuggestions: (p: { ids: number[] }, cx: CallContext<CoreProgress["acceptSuggestions"]>) =>
       this.ctx.suggestions.acceptSuggestions(p.ids, (pushed, total) => cx.progress({ pushed, total })),
@@ -44,8 +39,6 @@ export class AiCommands {
     transactionDetail: (p: { id: number }) => this.ctx.db ? loadTransactionDetail(this.ctx.db, p.id) : null
   }
   searchCommands = {
-    /** A filter expression written from `query` (domain/smartSearch), with
-     * the words found among `descriptions` (the client's rows). */
     smartSearch: async (p: { query: string; descriptions: string[] }) => {
       const session = this.ctx.current
       if (!hasJev()) throw new Error(`Smart search needs Jev (${JEV_SETUP})`)
@@ -66,8 +59,6 @@ export class AiCommands {
   }
   credentialsCommands = {
     saveApiKeys: (p: { patch: Partial<Record<CredentialName, string | null>> }) => { saveCredentials(p.patch); this.ctx.set(keyState()) },
-    /** Clairic's account from its saved token (cloudflareAccounts): saved
-     * when the token reaches exactly one; else how many it reaches. */
     findCloudflareAccount: async (_: object): Promise<{ name: string } | { count: number }> => {
       const token = credentialEnv().JASKMONEY_CF_TOKEN?.trim()
       if (!token) throw new Error("Save the API token first")
@@ -77,7 +68,6 @@ export class AiCommands {
       this.ctx.set(keyState())
       return { name: accounts[0]!.name }
     },
-    /** After a sign-in or sign-out. */
     refreshApiKeys: (_: object) => this.ctx.set(keyState()),
 
     signInLlm: async (p: { provider: LlmProvider }, cx: CallContext<CoreProgress["signInLlm"]>) => {
@@ -102,7 +92,6 @@ export class AiCommands {
           },
           prompt: (prompt) => new Promise<string>((resolve, reject) => {
             if (prompt.type === "select") { reject(new Error(`${label} asked a question this app can't show: ${prompt.message}`)); return }
-            // The callback won the race: the paste field goes.
             const abort = () => { cleanup(); report({ paste: null }); reject(new Error("callback received")) }
             const cancel = () => { cleanup(); report({ paste: null }); reject(new Error("cancelled")) }
             cleanup = () => {
@@ -139,8 +128,6 @@ export class AiCommands {
     }
   }
   rulesCommands = {
-    /** What the general model reads to write rules (ai/ruleWriter), and the
-     * rules declined so far. */
     ruleWriterInput: (_: object) => {
       const { categorySources, ...history } = this.ctx.ruleOffers.historyData()
       return { history: { ...history, categorySources: categorySources ? [...categorySources] : undefined }, declined: this.ctx.db ? loadRuleDeclines(this.ctx.db) : [] }

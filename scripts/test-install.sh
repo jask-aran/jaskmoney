@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# Runs scripts/install.sh for real into a throwaway folder (its own HOME,
-# bin and source, so nothing of yours is touched) and checks what it did.
-#
-#   scripts/test-install.sh [release|source]
-#
-# release (Linux x64): a first install of the latest release, then the
-# up-to-date line, a forced reinstall, and an upgrade from an older binary.
-# source: a build from main's source (as macOS installs), Bun included.
-# CI runs both (.github/workflows/installer.yml); the pre-push hook
-# (.githooks/pre-push) runs release before a push that changes the installer.
 set -euo pipefail
 
 mode="${1:-release}"
@@ -21,7 +11,6 @@ mkdir -p "$HOME"
 
 bash -n "$here/install.sh"
 
-# install [VAR=value…]: the installer, its output kept in $tmp/out.
 install() { env "$@" bash "$here/install.sh" </dev/null >"$tmp/out" 2>&1 || { cat "$tmp/out"; fail "the installer failed"; }; }
 fail() { printf 'test-install (%s): %s\n' "$mode" "$*" >&2; exit 1; }
 says() { grep -qF "$1" "$tmp/out" || { cat "$tmp/out"; fail "expected it to say: $1"; }; }

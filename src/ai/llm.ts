@@ -3,13 +3,6 @@ import { piAi, piModels, piProviders } from "./piAi"
 import { credentialEnv } from "./credentials"
 import { createFileCredentialStore, signedIn } from "./oauthStore"
 
-/**
- * The general model, for work that needs writing rather than judging
- * (rules), reached through pi-ai: OpenRouter or OpenAI, each by an API key
- * (Settings or .env) or a browser sign-in (OpenRouter's OAuth mints a key;
- * OpenAI's is Sign in with ChatGPT, on your ChatGPT plan). Jev (judging) and
- * Clairic (reading values) keep their own clients.
- */
 export type LlmProvider = "openrouter" | "openai"
 
 type Env = Record<string, string | undefined>
@@ -21,14 +14,11 @@ export const LLM_PROVIDERS: Record<LlmProvider, { label: string; keyName: "JASKM
 
 class LlmError extends Error {}
 
-/** How a provider is reached: a key saved in Settings or in .env, a browser sign-in, or not at all. */
 export function llmAuth(provider: LlmProvider, env: Env = credentialEnv()): "key" | "signed in" | null {
   if (env[LLM_PROVIDERS[provider].keyName]?.trim()) return "key"
   return signedIn(provider) ? "signed in" : null
 }
 
-/** The provider in use: the one chosen in Settings (u) when it's reachable,
- * else the first reachable one, else OpenRouter. */
 export function activeLlmProvider(env: Env = credentialEnv()): LlmProvider {
   const chosen = env.JASKMONEY_LLM_PROVIDER?.trim()
   if ((chosen === "openrouter" || chosen === "openai") && llmAuth(chosen, env)) return chosen
@@ -39,13 +29,11 @@ export function hasLlm(env: Env = credentialEnv()): boolean {
   return llmAuth(activeLlmProvider(env), env) !== null
 }
 
-/** A provider's model: Settings' choice, or its default. (JASKMONEY_LLM_MODEL was OpenRouter's, before OpenAI.) */
 export function llmModelId(env: Env = credentialEnv(), provider: LlmProvider = activeLlmProvider(env)): string {
   const saved = env[LLM_PROVIDERS[provider].modelName]?.trim() || (provider === "openrouter" ? env.JASKMONEY_LLM_MODEL?.trim() : "")
   return saved || LLM_PROVIDERS[provider].defaultModel
 }
 
-/** How hard the model thinks: the highest of these it supports. */
 const LLM_EFFORT: readonly ThinkingLevel[] = ["xhigh", "high", "medium"]
 
 export function llmEffort(model: Model<Api>): ThinkingLevel | undefined {
@@ -57,13 +45,10 @@ export function llmEffort(model: Model<Api>): ThinkingLevel | undefined {
 export interface Llm {
   models: Models
   model: Model<Api>
-  /** Reasoning effort for each request (llmEffort), when the model reasons. */
   effort?: ThinkingLevel
-  /** A key passed with each request; without one, pi-ai uses the provider's sign-in. */
   apiKey?: string
 }
 
-/** pi-ai with the two providers and the sign-in store; nothing else is loaded. */
 export function llmModels(): Models {
   const models = piModels().createModels({ credentials: createFileCredentialStore() })
   models.setProvider(piProviders.openrouter())
@@ -71,7 +56,6 @@ export function llmModels(): Models {
   return models
 }
 
-/** A provider's model as pi-ai's catalog has it (address, API, price, context), without a key; null if unknown. */
 export function llmModelInfo(provider: LlmProvider, id: string = llmModelId(credentialEnv(), provider)): Model<Api> | null {
   return llmModels().getModel(provider, id) ?? null
 }

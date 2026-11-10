@@ -1,4 +1,3 @@
-# Local data and runtime artifacts
 .venv/
 .uv-cache/
 __pycache__/
@@ -11,7 +10,6 @@ __pycache__/
 *.sqlite3
 *.sqlite-wal
 *.sqlite-shm
-# Keys and sign-ins, should a data folder end up inside the checkout
 credentials.json
 oauth.json
 executor.json
@@ -21,7 +19,6 @@ executor.json
 jaskmoney
 jaskmoney.exe
 
-# Bun / TypeScript
 node_modules/
 out/
 dist/
@@ -39,10 +36,8 @@ logs/
 .idea/
 .DS_Store
 
-# Tool metadata
 .conduit/
 .claude/worktrees/
 .claude/settings.local.json
 
-# Notes kept out of the public repo
 docs/private/

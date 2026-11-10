@@ -15,7 +15,6 @@ export function loadSuggestions(db: Db): CategorySuggestion[] {
     })
 }
 
-/** A stored ranking, or undefined when absent or unreadable. */
 function parseRanked(raw: string | null): CategorySuggestion["ranked"] {
   if (!raw) return undefined
   try {
@@ -46,7 +45,6 @@ export function declineRule(db: Db, expr: string, categoryId: number | null, tag
   else db.query("INSERT OR IGNORE INTO rule_declines (expr, category_id) VALUES (?, ?)").run(expr, categoryId)
 }
 
-/** Undo declineRule: the model may offer it again. */
 export function undeclineRule(db: Db, expr: string, categoryId: number | null, tagId: number | null = null): void {
   if (tagId != null) db.query("DELETE FROM rule_tag_declines WHERE expr = ? AND tag_id = ?").run(expr, tagId)
   else db.query("DELETE FROM rule_declines WHERE expr = ? AND category_id = ?").run(expr, categoryId)
@@ -57,7 +55,6 @@ export function loadRuleDeclines(db: Db): RuleDecline[] {
     UNION ALL SELECT expr, NULL AS categoryId, tag_id AS tagId FROM rule_tag_declines`).all()
 }
 
-/** A categorisation you made: `times` rows of `description` into the category. */
 export function recordCategoryChoices(db: Db, choices: { description: string; categoryId: number; times: number }[]): void {
   const add = db.query(`INSERT INTO category_choices (description, category_id, times) VALUES (?, ?, ?)
     ON CONFLICT (description, category_id) DO UPDATE SET times = times + excluded.times`)
@@ -81,7 +78,6 @@ export function declineCategoryChoice(db: Db, description: string, categoryId: n
   db.query("UPDATE category_choices SET declined = ? WHERE description = ? AND category_id = ?").run(declined ? 1 : 0, description.trim().toLowerCase(), categoryId)
 }
 
-/** Jev's merchant-breadth answers, by lowercased name. */
 export function loadMerchantBreadth(db: Db): Map<string, number> {
   return new Map(db.query<{ merchant: string; probability: number }, []>("SELECT merchant, probability FROM merchant_breadth").all().map((r) => [r.merchant, r.probability]))
 }
@@ -91,13 +87,10 @@ export function saveMerchantBreadth(db: Db, answers: Map<string, number>): void 
   db.transaction(() => { for (const [merchant, p] of answers) save.run(merchant, p) })()
 }
 
-/** The user's merchant notes, by lowercased name. */
 export function loadMerchantNotes(db: Db): Map<string, string> {
   return new Map(db.query<{ merchant: string; note: string }, []>("SELECT merchant, note FROM merchant_notes").all().map((r) => [r.merchant, r.note]))
 }
 
-/** Save (or, empty, remove) a merchant's note. Its breadth was judged
- * without it: forgotten, so the next run asks again. */
 export function saveMerchantNote(db: Db, merchant: string, note: string): void {
   const key = merchant.trim().toLowerCase()
   db.transaction(() => {
@@ -107,12 +100,10 @@ export function saveMerchantNote(db: Db, merchant: string, note: string): void {
   })()
 }
 
-/** Rows whose suggestion was dismissed: not suggested for again. */
 export function loadDismissedSuggestionIds(db: Db): Set<number> {
   return new Set(db.query<{ id: number }, []>("SELECT transaction_id AS id FROM category_suggestions WHERE dismissed = 1").all().map((r) => r.id))
 }
 
-/** Dismiss suggestions: kept, marked, so they are not made again. */
 export function dismissSuggestionRows(db: Db, transactionIds: number[]): void {
   const dismiss = db.query("UPDATE category_suggestions SET dismissed = 1 WHERE transaction_id = ?")
   db.transaction(() => { for (const id of transactionIds) dismiss.run(id) })()
@@ -123,7 +114,6 @@ export function undismissSuggestionRows(db: Db, transactionIds: number[]): void 
   db.transaction(() => { for (const id of transactionIds) restore.run(id) })()
 }
 
-/** Rows dismissed for a tag (by its upper-case name). */
 export function loadTagDismissals(db: Db, tagName: string): Set<number> {
   return new Set(db.query<{ id: number }, [string]>("SELECT transaction_id AS id FROM tag_dismissals WHERE tag_name = ?").all(tagName.toUpperCase()).map((r) => r.id))
 }

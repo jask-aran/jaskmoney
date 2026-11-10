@@ -2,15 +2,9 @@ import { afterEach, expect, test } from "bun:test"
 import { createCore } from "./core"
 import { createTag } from "../db/client"
 
-/**
- * The core's session and lane machines (core/context Session, core/lane) —
- * frozen: change the code, not these.
- */
-
 const cores: Array<ReturnType<typeof createCore>> = []
 afterEach(() => { for (const core of cores.splice(0)) core.close() })
 
-/** A core on a memory database with one CSV row and a tag. */
 function coreWithRow() {
   const core = createCore()
   cores.push(core)

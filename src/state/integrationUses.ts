@@ -1,22 +1,10 @@
-/**
- * What jaskmoney does with each integration, in plain words, for the
- * first-run setup (and Settings): every call it makes to Up and what each
- * changes; for each model, what it's sent and what it decides; for email,
- * what's read. Facts from the code, kept beside it: up/client (the Up
- * calls), core/upPush and core applyRules (when Up is written to),
- * ai/catalog (what each query sends), ai/orderEmails (what's read).
- */
 export interface IntegrationUse {
   title: string
-  /** One line: what it's for. */
   why: string
-  /** What it does, each with its effect. `writes` marks a change made. */
   uses: { what: string; effect: string; writes?: boolean }[]
-  /** The reassurances: what never happens, who decides. */
   promises: string[]
 }
 
-/** How to make an Up token, in the Up app (the setup's Up step, and Settings › Up Bank › Token). */
 export const UP_TOKEN_STEPS: readonly (readonly [string, string])[] = [
   ["1", "Swipe right"], ["2", "Data sharing › Personal Access Token"], ["3", "Generate a token, choose how long it lasts, copy it"], ["4", "Paste it here, press enter"],
 ]

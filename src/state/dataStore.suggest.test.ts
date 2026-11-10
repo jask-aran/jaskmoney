@@ -31,7 +31,6 @@ function setup() {
   return { db, add }
 }
 
-/** A fake Jev answering every question with one pick at 0.9; `seen` gets each row's description. */
 function fakeJev(onRow: (description: string) => Promise<void> | void = () => {}, categoryId = 101): Pick<JevClient, "judge"> {
   return answeringMerchants({ async judge(questions) {
     const out: Awaited<ReturnType<JevClient["judge"]>> = {}
@@ -201,13 +200,11 @@ test("merchant notes reload, invalidate breadth, and re-suggest only that mercha
   expect(JSON.stringify(suggested)).not.toContain("merchant_note")
   expect(data.state.merchantNotes).toEqual({ other: "always groceries for me" })
   expect(loadMerchantNotes(db).has("ebay")).toBe(false)
-  // Without Jev, save and clear the breadth cache but leave suggestions alone.
   expect(await data.setMerchantNote("eBay", note)).toBe(0)
   expect(loadMerchantBreadth(db).has("ebay")).toBe(false)
   expect(data.state.merchantNotes.ebay).toBe(note)
   expect(data.state.suggestions[1]?.categoryId).toBe(101)
 })
-
 
 test("a database swap reloads merchant notes and cancels a note change waiting for suggestions", async () => {
   const { db, add } = setup()

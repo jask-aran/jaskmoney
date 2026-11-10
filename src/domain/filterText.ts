@@ -1,8 +1,6 @@
 import type { FilterNode, FilterNodeKind } from "./filterParse"
 
-/** Case, spacing and punctuation dropped; letters (any script) and digits kept. */
 export const squash = (s: string) => s.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "")
-/** Squashed text by original, since the same descriptions are matched on every keystroke. */
 const squashed = new Map<string, string>()
 const squashCached = (s: string) => {
   let v = squashed.get(s)
@@ -14,15 +12,6 @@ const squashCached = (s: string) => {
   return v
 }
 
-/**
- * Whether `text` contains `needle`, ignoring case, spacing and punctuation:
- * "mcdonalds", "Mc Donalds" and "mcdonald's" all find "McDonald's". The
- * letters must still appear in order (not scattered, as a picker's fuzzy
- * match allows): rules use this too, and must not catch stray rows.
- * Approved deviation from legacy (Go filter.go: case-insensitive substring
- * only), 2026-10-27; it matches everything legacy did, and more. A needle
- * with no letters or digits ("*") is matched as written.
- */
 export function textContains(text: string, needle: string): boolean {
   const n = squash(needle)
   if (!n) return text.toLowerCase().includes(needle.trim().toLowerCase())
@@ -33,17 +22,14 @@ export function eqFold(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase()
 }
 
-/** One field term with its value quoted: `cat:"Pubs & Bars"`. */
 export function filterTerm(field: string, value: string): string {
   return `${field}:"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
 }
 
-/** Terms joined with OR, bracketed when there are several. */
 export function anyOf(terms: string[]): string {
   return terms.length > 1 ? `(${terms.join(" OR ")})` : terms[0] ?? ""
 }
 
-/** Canonical expression string for pills / preview. */
 export function filterExprString(node: FilterNode | null): string {
   if (!node) return ""
   return renderNode(node, 0)

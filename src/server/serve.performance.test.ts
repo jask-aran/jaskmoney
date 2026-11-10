@@ -11,7 +11,6 @@ type SocketData = {
   calls: Map<string | number, AbortController>
 }
 
-/** Capture the handlers: no listener, HTTP request or WebSocket is started. */
 function setup() {
   let handlers: WebSocketHandler<SocketData> | undefined
   const listener = spyOn(Bun, "serve").mockImplementation((options) => {
@@ -29,7 +28,6 @@ function setup() {
     const data: SocketData = {
       sent: new Map(), entries: new Map(), rows: new Map(), order: "", calls: new Map(),
     }
-    // Only data and send are used by these handlers.
     const ws = { data, send: (text: string) => { messages.push(text); return text.length } } as ServerWebSocket<SocketData>
     websocket.open?.(ws)
     return { ws, messages, message: (value: unknown) => websocket.message(ws, JSON.stringify(value)) }

@@ -2,7 +2,6 @@ import type { TimeframeState } from "../domain/timeframe"
 import type { SetStoreFunction } from "solid-js/store"
 import type { UiState } from "./uiStore"
 
-/** No ids: one shared object, so "still nothing highlighted" changes nothing downstream. */
 const NO_IDS: Record<number, boolean> = Object.freeze({}) as Record<number, boolean>
 
 export function createSelectionActions(state: UiState, setState: SetStoreFunction<UiState>) {
@@ -40,7 +39,6 @@ export function createSelectionActions(state: UiState, setState: SetStoreFunctio
     return out
   }
 
-  /** A range exists only while both ends are in the shown rows. */
   function ensureRange(rows: { id: number }[]) {
     const range = state.range
     if (range && (!rows.some((row) => row.id === range.anchorId) || !rows.some((row) => row.id === range.cursorId))) {
@@ -48,12 +46,10 @@ export function createSelectionActions(state: UiState, setState: SetStoreFunctio
     }
   }
 
-  /** Another database can reuse row ids; no row target carries across. */
   function forgetRows() {
     setState({ selectedIds: {}, range: null, pickerTargets: [], detail: null, acceptPreview: null })
   }
 
-  /** Data reloads remove targets only when their transactions no longer exist. */
   function pruneRows(existing: ReadonlySet<number>) {
     if (!Object.keys(state.selectedIds).some((id) => !existing.has(Number(id)))
       && !state.pickerTargets.some((id) => !existing.has(id))
@@ -65,8 +61,6 @@ export function createSelectionActions(state: UiState, setState: SetStoreFunctio
     })
   }
 
-  /** Rows an action applies to: the open detail transaction, else the
-   * highlighted range, else the selection, else the cursor row. */
   function targetIds(rows: { id: number }[]): number[] {
     if (state.detail) return [state.detail.id]
     const hl = Object.keys(highlightedIds(rows)).map(Number)
@@ -80,7 +74,6 @@ export function createSelectionActions(state: UiState, setState: SetStoreFunctio
   return { clearSelection, toggleSelectedId, setRangeFromMove, highlightedIds, ensureRange, forgetRows, pruneRows, targetIds }
 }
 
-/** Clamp a list cursor and scroll only when it crosses a window edge. */
 function cursorWindow(cursor: number, top: number, count: number, visible: number): { cursor: number; top: number } {
   if (count <= 0) return { cursor: 0, top: 0 }
   cursor = Math.max(0, Math.min(count - 1, cursor))

@@ -3,7 +3,6 @@ import type { Db } from "../db/client"
 import { syncTagLinks } from "./tags"
 import { testDb } from "../testing/scoped"
 
-/** A test database with one synced Up account. */
 function database() {
   const db = testDb()
   db.query("INSERT INTO accounts (name, type, source, sync_enabled) VALUES ('Up', 'debit', 'up', 1)").run()

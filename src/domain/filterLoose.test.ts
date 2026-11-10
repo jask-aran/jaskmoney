@@ -1,13 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { canonicalFilter, evalFilter, filterExprString, parseFilter, parseFilterStrict, type FilterNames } from "./filter"
 
-/**
- * The loose-to-strict ladder (approved 2026-10-29): the search bar forgives
- * what has one clear reading; saving rewrites to the full form, refusing
- * only what's ambiguous. Each change is a deviation from legacy Go
- * filter.go, approved by the user.
- */
-
 const read = (s: string, names?: FilterNames) => { const r = parseFilter(s, names); return r.error ? `error: ${r.error}` : filterExprString(r.node) }
 const hints = (s: string, names?: FilterNames) => parseFilter(s, names).hints.join(" | ")
 

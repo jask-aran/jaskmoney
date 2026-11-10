@@ -1,15 +1,9 @@
 import { EXECUTOR_MCP, type ExecutorStatus } from "../ai/executor"
 
-/**
- * Settings › AI models › Sources › Executor: what its dialog shows, from the
- * status as last read (ai/executor). Executor Cloud holds your accounts
- * (Gmail first); the app signs in to Executor and reaches them through it.
- */
 type ExecutorAction = "signIn" | "test" | "site" | "recheck" | "signOut"
 
 interface StatusLine { label: string; value: string }
 
-/** Gmail is among what Executor reaches (its tools name it, or a program can). */
 const gmailListed = (status: ExecutorStatus) => status.tools.some((t) => /gmail/i.test(t))
 
 export function executorLines(status: ExecutorStatus | null): StatusLine[] {
@@ -34,7 +28,6 @@ export function executorActions(status: ExecutorStatus | null): Array<{ id: Exec
   ]
 }
 
-/** The Sources row in the AI pane. */
 export function executorRow(status: ExecutorStatus | null, signedIn: boolean): { connected: boolean; how: string } {
   if (!status) return signedIn ? { connected: true, how: "signed in · Gmail and your other accounts" } : { connected: false, how: "not signed in · enter to connect" }
   if (!status.signedIn) return { connected: false, how: "not signed in · enter to connect" }

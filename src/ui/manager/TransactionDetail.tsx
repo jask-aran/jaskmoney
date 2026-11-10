@@ -17,7 +17,6 @@ import type { TextField } from "../../domain/textField"
 import type { TransactionDetail as TransactionDetailInfo } from "../../db/client"
 
 const LABEL = 12
-/** Bought items shown at once; more scroll (J/K). */
 export const BOUGHT_LINES = 10
 const BOUGHT_PRICE = 14
 
@@ -26,14 +25,9 @@ const ago = (iso: string) => {
   return minutes < 60 ? `${minutes}m ago` : minutes < 48 * 60 ? `${Math.round(minutes / 60)}h ago` : `${Math.round(minutes / 1440)}d ago`
 }
 
-/** Detail view for one transaction (enter in the Transactions table), from
- * the stores: the row, the core's provider details, its order-email
- * lookup, the notes being edited. TransactionDetailCard draws it. */
 export function TransactionDetail() {
   const dims = useTerminalDimensions()
   const row = createMemo(() => data.transactions().find((t) => t.id === (ui.state.detail?.id ?? null)) ?? null)
-  // Provider details from the core: read again for each row and each write.
-  // The last answer shows only while it's still this row's.
   const [fetched] = createResource(
     () => (ui.state.detail ? { id: ui.state.detail.id, version: data.state.version } : false),
     ({ id }) => data.transactionDetail(id).catch(() => null),
@@ -42,7 +36,6 @@ export function TransactionDetail() {
     const d = fetched.latest
     return d && d.id === (ui.state.detail?.id ?? null) ? d : null
   })
-  // An Amazon or eBay row without items: its lookup, if Executor is set up.
   const lookup = createMemo(() => {
     const t = row()
     if (!t || t.bought?.length || !marketplaceRows([t]).length || !executorSignedIn()) return null
@@ -61,31 +54,22 @@ export function TransactionDetail() {
   )
 }
 
-/** One transaction's detail, from props (the Manager's, through
- * TransactionDetail, and the setup tour's): what the bank and Up say,
- * what its order emails say it bought, its notes. Rows with no value are
- * left out. */
 export function TransactionDetailCard(props: {
   row: Transaction
-  /** The core's provider details (Up's own fields), when it has them. */
   detail: TransactionDetailInfo | null
   boughtTop: number
-  /** An Amazon or eBay row without items: how its email lookup stands. */
   lookup: string | null
-  /** The notes being edited, else null. */
   notes: TextField | null
   width: number
 }) {
   const row = () => props.row
   const detail = () => props.detail
   const lookup = () => props.lookup
-  // The bought list: a window of BOUGHT_LINES from boughtTop.
   const boughtLines = createMemo(() => {
     const items = row().bought ?? []
     const top = Math.max(0, Math.min(props.boughtTop, items.length - BOUGHT_LINES))
     return { shown: items.slice(top, top + BOUGHT_LINES), from: top + 1, to: Math.min(items.length, top + BOUGHT_LINES), total: items.length }
   })
-  // Modal border and padding (4), label, quantity (5), price.
   const boughtNameWidth = () => Math.max(10, props.width - 4 - LABEL - 5 - BOUGHT_PRICE)
   const field = (label: string, value: JSX.Element) => (
     <text wrapMode="none">
@@ -122,9 +106,6 @@ export function TransactionDetailCard(props: {
           {field("Bank text", <S fg={ink.figure}>{detail()?.rawText!}</S>)}
         </Show>
         <Show when={detail()?.message}>{field("Message", <S fg={ink.figure}>{detail()?.message!}</S>)}</Show>
-        {/* What its order emails say it bought (app/purchases): quantity, item,
-            price each; BOUGHT_LINES at a time, J/K scroll. Else, for an Amazon
-            or eBay row, whether its email is still being looked for. */}
         <Show when={row()!.bought?.length} fallback={<Show when={lookup()}>{field("Bought", <S fg={ink.note}>{lookup()!}</S>)}</Show>}>
           <For each={boughtLines().shown}>{(item, i) => field(i() === 0 ? "Bought" : "", <>
             <S fg={ink.note}>{`${item.quantity}×`.padStart(4)} </S>
@@ -146,14 +127,12 @@ export function TransactionDetailCard(props: {
   )
 }
 
-/** "CARD_ON_FILE" → "Card on file", with "··1234" when the suffix is known. */
 function cardText(method: string | null, suffix: string | null): string | null {
   if (!method) return null
   const words = method.toLowerCase().replace(/_/g, " ")
   return `${words[0]!.toUpperCase()}${words.slice(1)}${suffix ? ` ··${suffix}` : ""}`
 }
 
-/** RFC 3339 with offset → "Sun 26 Oct 2026, 9:14 pm" in local time. */
 function formatWhen(iso: string | null): string | null {
   if (!iso) return null
   const t = Date.parse(iso)

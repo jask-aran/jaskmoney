@@ -24,7 +24,6 @@ test("Up Bank's dialog: no part of the saved token, anywhere; the steps to make 
   expect(frame).not.toContain("9z7q")
   expect(frame).not.toContain("••••")
   expect(frame).not.toContain("Data sharing › Personal Access Token")
-  // The core's state, which every client (the web app too) receives, says only where it's from.
   expect(JSON.stringify(data.state.apiKeys)).not.toContain("9z7q")
   expect(data.state.apiKeys.JASKMONEY_UP_TOKEN).toEqual({ source: "saved", mask: "" })
   await data.saveApiKeys({ JASKMONEY_UP_TOKEN: null })

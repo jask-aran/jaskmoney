@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test"
 import { ebayOrderOf, matchOrders, readEbay, readShipment, type Purchase } from "./orderEmails"
 
-// Invented emails and rows, in the shapes Amazon AU and eBay send.
 const shipped = (items: Array<[string, number, string]>, total: string) => [
   "Your package was shipped!", "Order #", "250-0000000-0000001", "Track package", "https://example.com/track",
   ...items.flatMap(([name, qty, price]) => [`* ${name}`, `Quantity: ${qty}`, price]), "Total", total, "Amazon.com.au",
@@ -42,8 +41,8 @@ test("matching: Amazon charge to the shipment of the same total nearby, each ema
   const by = new Map(found.map((f) => [f.transactionId, f]))
   expect(by.get(1)?.items.map((i) => i.name)).toEqual(["Backflush Insert"])
   expect(by.get(2)?.items.map((i) => i.name)).toEqual(["Residue Cleaner"])
-  expect(by.has(3)).toBe(false) // the one 9.32 shipment nearby went to row 1; September's is too far
-  expect(by.get(4)?.items.map((i) => i.name)).toEqual(["Colouring Book"]) // emailed a day after the charge
+  expect(by.has(3)).toBe(false)
+  expect(by.get(4)?.items.map((i) => i.name)).toEqual(["Colouring Book"])
   expect(by.get(5)).toMatchObject({ source: "ebay", order: "20-12345-67890", items: [{ name: "Coffee Bean Keeper", quantity: 1, price: 48.49 }] })
   expect(by.get(6)).toMatchObject({ items: [{ name: "Residue Cleaner", quantity: 1, price: 18.9 }], refundOf: 2 })
 })

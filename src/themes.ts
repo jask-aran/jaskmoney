@@ -1,13 +1,5 @@
-/**
- * The themes: each a palette in Catppuccin's slots (14 accents, 12 greys
- * from text down to crust), so every theme fills the same roles. theme.ts
- * derives the rest (canvas, row washes, chart rules, the strong/figure/
- * heading inks) unless a theme sets them itself. Settings › Appearance ›
- * Theme picks one (ThemePicker), previewing each live.
- */
 import type { Palette } from "./theme"
 
-/** A theme's own colours: the accents and greys, and any derived slot it sets itself. */
 export type BasePalette = Pick<Palette,
   "rosewater" | "flamingo" | "pink" | "mauve" | "red" | "maroon" | "peach" | "yellow" | "green" | "teal" | "sky" | "sapphire" | "blue" | "lavender"
   | "text" | "subtext1" | "subtext0" | "overlay2" | "overlay1" | "overlay0" | "surface2" | "surface1" | "surface0" | "base" | "mantle" | "crust"
@@ -28,8 +20,6 @@ export const THEMES: readonly ThemeDef[] = [
       yellow: "#f9e2af", green: "#a6e3a1", teal: "#94e2d5", sky: "#89dceb", sapphire: "#74c7ec", blue: "#89b4fa", lavender: "#b4befe",
       text: "#cdd6f4", subtext1: "#bac2de", subtext0: "#a6adc8", overlay2: "#9399b2", overlay1: "#7f849c", overlay0: "#6c7086",
       surface2: "#585b70", surface1: "#45475a", surface0: "#313244", base: "#1e1e2e", mantle: "#181825", crust: "#11111b",
-      // As tuned before themes: today's rule a vivid green, the budget's a
-      // muted yellow, so the two never read alike; neutral near-whites.
       chartToday: "#66d690", chartBudget: "#a8996b", strong: "#ffffff", figure: "#e6e6e6",
     },
   },

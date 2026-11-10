@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Before a push that changes the installer, runs it for real
-# (scripts/test-install.sh release): main serves it to every install and
-# upgrade as soon as it lands. On with: git config core.hooksPath .githooks
 set -euo pipefail
 zero=0000000000000000000000000000000000000000
 changed=""

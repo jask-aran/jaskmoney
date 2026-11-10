@@ -7,16 +7,6 @@ type PickerRow =
   | { kind: "heading"; label: string }
   | { kind: "category"; category: Category; index: number; confidence?: number }
 
-/**
- * Category picker rows: each group (a category with children, e.g. Up's
- * "Good Life") as a heading followed by its children, then the local
- * top-level categories under "Other", with the default (Uncategorised) last.
- * Groups themselves are not assignable: Up only accepts subcategories.
- * `index` numbers the assignable rows in display order (the picker cursor).
- * A query matches a category's name or its group's name, case-insensitively.
- * `suggested` categories, when there is no query, come first under
- * "Suggested" (they also stay in their groups).
- */
 export function categoryPickerRows(categories: Category[], query: string, sortMatches = true, suggested: PickerSuggestion[] = []): PickerRow[] {
   const q = query.trim().toLowerCase()
   const groupIds = new Set(categories.map((c) => c.parentId).filter((id): id is number => id != null))
@@ -53,7 +43,6 @@ export function assignableCategories(categories: Category[], query: string, sugg
   return categoryPickerRows(categories, query, true, suggested).flatMap((r) => (r.kind === "category" ? [r.category] : []))
 }
 
-/** One row uses its ranking; multiple rows use their most shared picks. */
 export function pickerSuggestions(ids: number[], suggestions: Record<number, CategorySuggestion>): PickerSuggestion[] {
   if (ids.length === 1) {
     const suggestion = suggestions[ids[0]!]

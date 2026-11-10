@@ -6,7 +6,6 @@ import { ensureSchema, loadTags } from "./client"
 test("a v20 category scope comes through v21's expression back to its categories (a group whole); about starts empty", () => {
   const db = new Database(":memory:")
   ensureSchema(db)
-  // Back to v20's layout: no scope column, category scopes.
   db.exec("ALTER TABLE tags DROP COLUMN scope; ALTER TABLE categories DROP COLUMN budget_ignored; UPDATE schema_meta SET version = 20")
   const group = Number(db.query("INSERT INTO categories (name, color) VALUES ('Motoring', '#fff')").run().lastInsertRowid)
   db.query("INSERT INTO categories (name, color, parent_id) VALUES ('Petrol', '#fff', ?), ('Road tolls', '#fff', ?)").run(group, group)

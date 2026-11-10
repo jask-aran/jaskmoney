@@ -11,9 +11,6 @@ import { CONFIG_SETTLE_MS } from "./runtime"
 
 export class SettingsCommands {
   constructor(private readonly ctx: CoreRuntime) {}
-  // Prefs that change with each key (the range, the account, the charts)
-  // are written once they settle, not on every press; exit writes any left.
-  // Dirty until a write succeeds, so a failed one is tried again.
   configTimer: ReturnType<typeof setTimeout> | null = null
   configDirty = false
 
@@ -31,13 +28,11 @@ export class SettingsCommands {
 
   deleteSettingsRule = (id: number) => { this.ctx.mutate((db) => deleteRule(db, id)) }
 
-  /** The names cat:, tag: and acc: values are found among (shortened names). */
   filterNames = () => {
     return { cat: this.ctx.state.categories.map((c) => c.name), tag: this.ctx.state.tags.map((t) => t.name), acc: this.ctx.state.accounts.map((a) => a.name) }
   }
 
   persistConfig = (patch: Partial<SettingsConfig>) => {
-    // Writes everything as it is now, so a deferred UI write is done too.
     if (this.configTimer) { clearTimeout(this.configTimer); this.configTimer = null }
     saveSettingsConfig({ version: 2, icons: this.ctx.state.icons, welcomed: this.ctx.state.welcomed, savedFilters: this.ctx.state.savedFilters, importProfiles: this.ctx.state.importProfiles, ui: this.ctx.state.uiPrefs, ...patch })
     this.configDirty = false
@@ -45,11 +40,9 @@ export class SettingsCommands {
 
   flushConfig = () => {
     if (!this.configDirty) return
-    try { this.persistConfig({}) } catch { /* the next write or exit tries again */ }
+    try { this.persistConfig({}) } catch {}
   }
 
-  /** `soon`: written once keys settle (CONFIG_SETTLE_MS), for prefs that
-   * change on every press; otherwise now. */
   saveUiPrefs = (patch: Partial<UiPrefs>, { soon = false } = {}) => {
     const next = { ...this.ctx.state.uiPrefs, ...patch }
     if (next.filterUsage) next.filterUsage = Object.fromEntries(Object.entries(next.filterUsage).filter(([id]) => this.ctx.state.savedFilters.some((filter) => filter.id === id)))
@@ -84,16 +77,10 @@ export class SettingsCommands {
     const ids = transactionIds ? new Set(transactionIds) : null
     const report = evaluateRules(ids ? this.ctx.transactions().filter((txn) => ids.has(txn.id)) : this.ctx.transactions(), this.ctx.state.rules, this.ctx.state.savedFilters, this.ctx.state.categories, this.ctx.state.tags)
     let tagChanges = 0, updatedTransactions = 0
-    // No change, no write: a reload would send every row again for nothing.
     if (!dryRun && report.changes.length) this.ctx.mutate((database) => database.transaction(() => {
       const at = appNow().toISOString()
       for (const change of report.changes) {
         let changed = change.categorySet
-        // 'rule' keeps sync from replacing a rule's category with the
-        // provider's. An Up row Up can hold the category for goes to Up like
-        // any categorisation: 'pending' until retryPendingCategories (which a
-        // sync runs right after its rules) sends it. (A deviation from the
-        // legacy app, which had no provider to send to.)
         if (change.categorySet) {
           const row = database.query(`SELECT source, external_id AS externalId, ext_categorizable AS categorizable FROM transactions WHERE id = ?`).get(change.id) as PushableRow | null
           const category = this.ctx.state.categories.find((c) => c.id === change.categoryId)
@@ -102,8 +89,6 @@ export class SettingsCommands {
           const previous = this.ctx.transactions().find((t) => t.id === change.id)?.categoryId ?? null
           if (change.categoryId != null) logCategories(database, [{ transactionId: change.id, categoryId: change.categoryId, previousCategoryId: previous }], "rule", at)
         }
-        // Approved provider deviation from legacy: rule tags use the same
-        // staging and six-tag limit as the picker.
         for (const tagId of change.tagIds) {
           const staged = stageTagChange(database, { transactionId: change.id, tagId, action: "add", how: "rule", at })
           if (staged.kind === "changed") { tagChanges++; changed = true }
@@ -134,8 +119,6 @@ export class SettingsCommands {
     setIcons: (p: { on: boolean }) => { this.persistConfig({ icons: p.on }); this.ctx.set({ icons: p.on }) },
     setWelcomed: (p: { done: boolean }) => { this.persistConfig({ welcomed: p.done }); this.ctx.set({ welcomed: p.done }) },
     saveUiPrefs: (p: { patch: Partial<UiPrefs>; soon?: boolean }) => this.saveUiPrefs(p.patch, { soon: p.soon }),
-    /** Save a profile; `originalId` is the id it had when editing began, so
-     * renaming one replaces it instead of leaving the old one behind. */
     saveImportProfile: (p: { profile: ImportProfile; originalId?: string | null }) => {
       const normalized = validateImportProfile(p.profile)
       const next = [...this.ctx.state.importProfiles.filter((x) => x.id !== normalized.id && x.id !== p.originalId), normalized].sort((a, b) => a.id.localeCompare(b.id))

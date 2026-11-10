@@ -18,11 +18,8 @@ const SORT_CYCLE: SortColumn[] = [
   "account",
 ]
 
-/** Text order as `localeCompare` gives it, without building a collator per call. */
 const textOrder = new Intl.Collator().compare
 
-/** Rows in a column's order; dates tie-break on id so the order is stable.
- * Confidence sorts by `confidence(id)` (no suggestion lowest), then date. */
 function sortRows(rows: Transaction[], col: SortColumn, asc: boolean, confidence: (id: number) => number = () => -1): Transaction[] {
   const byDate = chronological
   const compare = (a: Transaction, b: Transaction): number => {
@@ -40,7 +37,6 @@ function sortRows(rows: Transaction[], col: SortColumn, asc: boolean, confidence
 
 export function createTableRows(state: DataState, accountScoped: ReturnType<typeof createHistoryRows>["accountScoped"], inView: (t: Transaction) => boolean, ask: ReturnType<typeof createAskState>, nearMissesShown: ReturnType<typeof createAskCounts>["nearMissesShown"]) {
   const { askVersion, verdictAt } = ask
-  /** Rows in the table only as near misses (they follow the matches). */
   const nearMissIds = createRoot(() => createMemo(() => {
     const expr = state.filterExpr ? unwrap(state.filterExpr) : null
     if (!nearMissesShown() || !expr) return new Set<number>()
@@ -54,26 +50,15 @@ export function createTableRows(state: DataState, accountScoped: ReturnType<type
     if (!expr && !state.uncategorisedOnly && !state.tagReview) return rows
     const asks = askTerms(expr).length > 0
     if (asks) askVersion()
-    // top: cuts the matches; near misses (when shown) follow, cut alike.
     const matches = applyTop(expr, rows.filter((t) => inView(t) && (!expr || evalFilter(expr, t, verdictAt(MATCH_AT)))))
     if (!asks || !nearMissesShown()) return matches
     const near = rows.filter((t) => inView(t) && evalFilter(expr, t, verdictAt(NEAR_AT)) && !evalFilter(expr, t, verdictAt(MATCH_AT)))
     return [...matches, ...applyTop(expr, near)]
   }))
 
-  /**
-   * Confidence order holds still while you review: a row sorts by the
-   * lowest confidence it has had in this view, so accepting one (which asks
-   * its namesakes again) or an answer arriving can drop a row down, never
-   * lift it; the numbers and categories shown are always the latest. A row
-   * waiting for its first answer is placed when it comes; a dismissed one
-   * (no suggestion) drops to the bottom. Reopening the view or changing the
-   * sort sorts afresh.
-   */
   const sortedAt = new Map<number, number>()
   let sortedFor = ""
 
-  /** The account's rows through the filter, in the table's sort. */
   const scopedTransactions = createRoot(() => createMemo(() => {
     const review = state.tagReview
     const live = state.sortColumn !== "confidence" ? undefined
@@ -88,7 +73,6 @@ export function createTableRows(state: DataState, accountScoped: ReturnType<type
       return now
     })
     const sorted = sortRows(filtered(), state.sortColumn, state.sortAscending, confidence)
-    // Near misses after every match, each part in the table's order.
     const near = nearMissIds()
     return near.size ? [...sorted.filter((t) => !near.has(t.id)), ...sorted.filter((t) => near.has(t.id))] : sorted
   }))
@@ -97,7 +81,6 @@ export function createTableRows(state: DataState, accountScoped: ReturnType<type
 }
 
 export function createViewControls(state: DataState, setState: SetStoreFunction<DataState>, askRuns: ReturnType<typeof createAskState>["askRuns"]) {
-  /** The names cat:, tag: and acc: values are found among (shortened names). */
   function filterNames(): FilterNames {
     return { cat: state.categories.map((c) => c.name), tag: state.tags.map((t) => t.name), acc: state.accounts.map((a) => a.name) }
   }
@@ -107,9 +90,6 @@ export function createViewControls(state: DataState, setState: SetStoreFunction<
     setState({ filterQuery: q, filterExpr: expr, filterErr: err, filterNote: note })
   }
 
-  /** Enter: keeps the search as typed (loose), and flags what saving it
-   * would refuse (a name several fit, a mistyped field) or what doesn't
-   * parse at all. */
   function commitFilter(q: string): { ok: boolean; err: string } {
     const trimmed = q.trim()
     if (!trimmed) {
@@ -146,7 +126,6 @@ export function createViewControls(state: DataState, setState: SetStoreFunction<
   }
 
   function cycleSortColumn(): string {
-    // Confidence is a column only where rows have suggestions.
     const cycle: SortColumn[] = state.uncategorisedOnly || state.tagReview ? ["confidence", ...SORT_CYCLE] : SORT_CYCLE
     const i = cycle.indexOf(state.sortColumn)
     const next = cycle[(i + 1) % cycle.length]!

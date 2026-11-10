@@ -1,24 +1,8 @@
-/**
- * Single-line text editing with a caret, shared by every text-entry context
- * (filter, notes, settings editors, import dialogs). Pure: `editText` maps a
- * key to the next field, or null when the key is not a text edit (so the
- * caller's own bindings, e.g. enter or esc, still apply).
- *
- * Keys: printable characters insert at the caret; backspace / delete remove
- * before / after it; ←/→ (ctrl+b / ctrl+f) move one character; home / end
- * (ctrl+a / ctrl+e) jump to the ends; alt+←/→ move a word; ctrl+w deletes
- * the word before the caret; ctrl+u deletes to the start, ctrl+k to the end.
- * The caret is a code-unit index into `value`, 0..value.length, always on a
- * character's edge: a character is a grapheme (an emoji with its variation
- * selector, a flag, a letter with its accent), typed, moved over and deleted
- * whole; a code unit at a time split "🏖️" in two.
- */
 export interface TextField {
   value: string
   caret: number
 }
 
-/** The parts of a key event editing reads (a subset of OpenTUI's KeyEvent). */
 export interface TextKey {
   name: string
   sequence: string
@@ -28,22 +12,17 @@ export interface TextKey {
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 
-/** The text as characters (graphemes): what a caret steps over. */
 export function characters(text: string): string[] {
   return Array.from(graphemes.segment(text), (s) => s.segment)
 }
 
-/** A key that types its own character: one printable character (a
- * grapheme, which may be several code units: an emoji), no ctrl/meta. */
 export function isPrintable(key: TextKey): boolean {
   if (key.ctrl || key.meta) return false
   const s = key.sequence
   if (!s || characters(s).length !== 1) return false
-  // No control characters (C0, DEL, C1) anywhere in it.
   return !/[\u0000-\u001f\u007f-\u009f]/.test(s)
 }
 
-/** The character edge before / after `caret` (graphemes, not code units). */
 function before(value: string, caret: number): number {
   let edge = 0
   for (const s of graphemes.segment(value)) { if (s.index >= caret) break; edge = s.index }
@@ -54,12 +33,10 @@ function after(value: string, caret: number): number {
   return value.length
 }
 
-/** A field holding `value` with the caret at its end. */
 export function textField(value = ""): TextField {
   return { value, caret: value.length }
 }
 
-/** The caret clamped into the value (a stored caret may predate an edit). */
 export function clampCaret(field: TextField): number {
   return Math.max(0, Math.min(field.value.length, field.caret))
 }

@@ -9,10 +9,8 @@ describe("settings form", () => {
     expect(cycleFromDraft({ unit: "week", anchor: "date", anchorDate: "Thursday" })).toEqual({ unit: "week", anchor: "date", anchorDate: "1970-01-08", payEarly: false })
     expect(cycleFromDraft({ unit: "fortnight", anchor: "date", anchorDate: "2026-02-30" })).toBe("Date must be YYYY-MM-DD")
     expect(cycleFromDraft({ unit: "month", anchor: "calendar", anchorDate: "anything" })).toEqual({ unit: "month", anchor: "calendar", anchorDate: null, payEarly: false })
-    // Old full-date anchors read back in the unit's form.
     expect(anchorDraft({ unit: "month", anchor: "date", anchorDate: "2026-10-15" })).toBe("15")
     expect(anchorDraft({ unit: "week", anchor: "date", anchorDate: "2026-10-15" })).toBe("Thursday")
-    // A monthly 15th cycles from the 15th whatever year the anchor names.
     const stored = cycleFromDraft({ unit: "month", anchor: "date", anchorDate: "15" })
     expect(typeof stored !== "string" && cycleFor(stored, "2026-10-26")).toMatchObject({ start: "2026-10-15", end: "2026-11-14" })
   })

@@ -26,34 +26,22 @@ import { type PayPart } from "./PlanGraphics"
 
 export function createBudgetInputs() {
   const shown = () => ui.state.activeTab === "budgets"
-  // "always": the chart draws in again each time the tab comes into view.
   const seen = showings(shown)
-  // Hidden, the tab keeps what it last showed rather than recompute: its
-  // inputs hold their last values, and showing it passes on only those that
-  // changed meanwhile, so a tab whose data didn't change wakes nothing.
   const held = <T,>(fn: () => T): (() => T) => createMemo<T | undefined>((was) => (shown() || was === undefined ? fn() : was)) as () => T
   const terminal = useTerminalDimensions()
   const dims = held(() => terminal())
   const transactions = held(() => data.transactions())
 
-  // The clock isn't reactive: read fresh as before, and showing the tab on
-  // a new day brings its results up to date.
   const shownOn = held(() => appToday())
   const today = () => (shownOn(), appToday())
   const config = held(() => data.cycle())
-  // The cycle shown ([ and ] step it), the day it's shown up to (today, or
-  // its last day once over) and the budgets in force in it.
   const view = createMemo(() => sharedBudgetView(config(), today(), ui.state.budgetOffset, data.state.budgetHistory, data.state.budgets))
   const cycle = () => view().cycle
   const through = () => view().through
   const budgets = () => view().budgets
   const elapsed = () => daysBetween(cycle().start, through()) + 1
-  // A past cycle's dates, the year where it isn't this one's.
   const period = () => `${shortDate(cycle().start)} – ${shortDate(cycle().end)}${cycle().end.slice(0, 4) === today().slice(0, 4) ? "" : ` ${cycle().end.slice(0, 4)}`}`
   const pace = () => elapsed() / cycle().days
-  // The overall budget is everything else once categories have their own;
-  // a category's budget goes by the category's own name (the list shows
-  // its group).
   const hasCategoryBudgets = () => budgets().some((b) => b.scope.kind === "category")
   const overallName = () => (hasCategoryBudgets() ? "Everything else" : "Overall spending")
   const label = (budget: Budget) => {
@@ -70,7 +58,6 @@ export function createBudgetProgress(input: Pick<ReturnType<typeof createBudgetI
 
   const progress = createMemo(() => new Map(budgetProgress(budgets(), config(), through(), data.state.accounts, data.state.categories, transactions()).map((p) => [p.budget.id, p])))
   const split = createMemo(() => allocation(budgets(), data.state.categories))
-  // The budgets together against what they count between them.
   const totalProgress = createMemo(() => {
     const counts = budgetCounts({ kind: "total" }, data.state.categories, budgets())
     const spentOnBudgets = cycleSpending(cycle(), through(), data.state.accounts, transactions()).filter(counts).reduce((sum, t) => sum - t.amount, 0)
@@ -78,9 +65,6 @@ export function createBudgetProgress(input: Pick<ReturnType<typeof createBudgetI
   })
   const lines = createMemo(() => sharedCategoryLines(config(), through(), data.state.accounts, data.state.categories, budgets(), transactions()))
   const ignored = createMemo(() => budgetIgnoredIds(data.state.categories))
-  // The Budgets pane's rows: All spending (against the target), the
-  // account budgets, then the categories, groups closed unless opened
-  // (space); your pay has a key (p), not a row.
   const setup = createMemo(() => budgetSetupRows(lines(), new Set(ui.state.budgetSetupOpen), budgets()))
   const categoryCursor = createMemo(() => Math.min(ui.state.budgetCategoryCursor, Math.max(0, setup().length - 1)))
   const firstData = createMemo(() => transactions().reduce((first, t) => (t.dateISO < first ? t.dateISO : first), today()))
@@ -90,10 +74,6 @@ export function createBudgetProgress(input: Pick<ReturnType<typeof createBudgetI
 export function createBudgetHistory(input: Pick<ReturnType<typeof createBudgetInputs>, "config" | "label" | "ALL" | "today" | "transactions" | "cycle" | "through"> & Pick<ReturnType<typeof createBudgetProgress>, "setup" | "categoryCursor" | "split" | "firstData">) {
   const { config, setup, categoryCursor, label, ALL, split, firstData, today, transactions, cycle, through } = input
 
-  // What the charts follow: the Budgets pane's row at its cursor (All
-  // spending to start), wherever the focus is. Its rows are judged by the
-  // budgets of their own cycle (budgetCountsThen): rent is everything else
-  // only in cycles it had no budget.
   const subject = createMemo((): { title: string; scope: BudgetSubject | null; counts: (row: Transaction) => boolean; amount: number | null } => {
     const of = (scope: BudgetSubject) => budgetCountsThen(scope, data.state.categories, data.state.budgetHistory, data.state.budgets, config())
     const at = setup()[categoryCursor()]
@@ -106,24 +86,16 @@ export function createBudgetHistory(input: Pick<ReturnType<typeof createBudgetIn
     if (at?.kind === "account") return { title: label(at.budget), scope: at.budget.scope, counts: of(at.budget.scope), amount: at.budget.amount }
     return { title: ALL, scope: { kind: "total" }, counts: of({ kind: "total" }), amount: split().total || null }
   })
-  // Every spending row to today, then the subject's: moving the cursor
-  // redoes only the second, and each cycle takes its days from it rather
-  // than going through the whole history again.
   const spendingRows = createMemo(() => cycleSpending({ start: firstData(), end: today(), days: 0 }, today(), data.state.accounts, transactions()))
   const subjectRows = createMemo(() => spendingRows().filter(subject().counts))
   const spending = (c: Cycle, through: string) => subjectRows().filter((t) => t.dateISO >= c.start && t.dateISO <= through)
   const daily = (c: Cycle, through: string) => ({ cycle: c, daily: dailySpendSeries(spending(c, through), c.start, c.end).values })
-  // Cycles the history covers as well as this one (historyCovers, as the
-  // Overview compares periods): a gap, or a few stray old rows, isn't a
-  // cycle of spending nothing.
   const past = createMemo(() => {
     const now = { start: cycle().start, end: through() }
     return pastCycles(config(), through(), HISTORY).filter((c) => c.end >= firstData() && historyCovers(transactions(), c, now))
   })
   const nowDays = createMemo(() => daily(cycle(), through()))
   const spent = () => nowDays().daily.reduce((a, b) => a + b, 0)
-  // The cycle shown and those before it, newest first, each with the
-  // budget in force then.
   const cycles = createMemo((): CycleSpent[] => {
     const scope = subject().scope
     return [
@@ -146,20 +118,13 @@ export function createBudgetPlan(input: Pick<ReturnType<typeof createBudgetInput
   const spendingIds = createMemo(() => new Set(data.state.accounts.filter((a) => accountRole(a) === "spending").map((a) => a.id)))
   const allSpending = createMemo(() => transactions().filter((t) => t.accountId != null && spendingIds().has(t.accountId)))
   const inCycle = createMemo(() => allSpending().filter((t) => t.dateISO >= cycle().start && t.dateISO <= cycle().end))
-  // The plan: what came in this cycle and your spending (the overall
-  // budget); the rest goes to savers. What came in is all income (pay and
-  // interest: the Overview's "in", so what's left here is its net), or
-  // until pay has, your usual pay (what you expect each payday). Nothing is
-  // judged without them.
   const expectedPay = () => data.state.uiPrefs.expectedPay || null
   const flows = createMemo(() => computePeriodFlows(data.state.accounts, transactions().filter((t) => t.dateISO >= cycle().start && t.dateISO <= through())))
   const income = () => flows().income
   const planPay = () => (paid().pay > 0 ? income() : expectedPay())
   const spendingPlan = () => (budgets().length ? split().total : null)
   const toSavers = () => (planPay() != null && spendingPlan() != null ? planPay()! - spendingPlan()! : null)
-  // This cycle's pay as it happened: all of it, and what's gone to savers.
   const paid = createMemo(() => cyclePay(data.state.accounts, transactions(), cycle().start, through()))
-  // The parts of the target: the category budgets not inside a group with one.
   const targetParts = createMemo((): PayPart[] => {
     const onCategory = new Set(budgets().flatMap((b) => (b.scope.kind === "category" ? [b.scope.categoryId] : [])))
     return budgets().flatMap((b): PayPart[] => {
@@ -174,12 +139,7 @@ export function createBudgetPlan(input: Pick<ReturnType<typeof createBudgetInput
 
 export function createBudgetCalendar(input: Pick<ReturnType<typeof createBudgetInputs>, "view" | "today" | "cycle" | "seen"> & Pick<ReturnType<typeof createBudgetChartModel>, "subs"> & Pick<ReturnType<typeof createBudgetHistory>, "subjectRows" | "subject" | "spent">) {
   const { view, subs, today, cycle, subjectRows, subject, spent, seen } = input
-  // The cycle's calendar, always there: the budget at the cursor's spending
-  // each day so far, and on the days to come, its regular payments due
-  // (expected charges, in caution). Its legend: what's expected by the
-  // cycle's end, and what of the budget that leaves.
   const expectedCharges = createMemo(() => (view().current ? upcomingCharges(subs(), addDays(today(), 1), cycle().end) : []))
-  // The grid runs on a day, to the next cycle's payday, marked "pay".
   const calendarWeeks = createMemo(() => {
     const nextPayday = addDays(cycle().end, 1)
     const weeks = spendingCalendar(subjectRows().filter((t) => t.dateISO >= cycle().start && t.dateISO <= cycle().end), cycle().start, cycle().end, data.state.weekStart, { through: nextPayday })
@@ -202,9 +162,6 @@ export function createBudgetCalendar(input: Pick<ReturnType<typeof createBudgetI
       ...(free == null ? [] : [{ text: free >= 0 ? ` · ${formatWholeMoney(free)} free after them` : ` · ${formatWholeMoney(-free)} over after them`, fg: free >= 0 ? tone.good : tone.bad }]),
     ]
   }
-  // Permanent, but it draws in as the charts do ("always": each time the
-  // tab comes into view, the cycle or the budget changes): its days tile in
-  // in date order.
   const calendarReveal = useReveal(
     () => (data.state.uiPrefs.chartMotion === "always" ? `${cycle().start}:${subject().title}:${seen()}` : undefined),
     () => chartSpeedMs(data.state.uiPrefs.chartSpeed), () => data.state.uiPrefs.chartCurve)
@@ -214,5 +171,4 @@ export function createBudgetCalendar(input: Pick<ReturnType<typeof createBudgetI
   return { calendarWeeks, calendarThrough, calendarSpans }
 }
 
-/** Cycles before this one the chart and the cycle lines can show, at most. */
 const HISTORY = 36

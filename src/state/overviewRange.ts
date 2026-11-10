@@ -7,12 +7,6 @@ import type { Transaction } from "../domain/types"
 import type { DataState } from "./dataStore"
 import type { UiState } from "./uiStore"
 
-/**
- * What the Overview shows over its Date Range, computed once for the tab and
- * its keys alike: the bounds, the spending scope (the selected spending
- * account, or all of them), that scope's transactions in the range, and its
- * spending by category group.
- */
 export function overviewRange(
   data: { state: Pick<DataState, "accounts" | "accountSelection" | "categories">; transactions(): Transaction[]; cycle(): CycleConfig },
   u: Pick<UiState, "timeframe">,
@@ -28,14 +22,10 @@ export function overviewRange(
   return { clock, bounds, scope, scopeIds, spending, inPeriod, groups }
 }
 
-/** Every category line, groups then their subcategories. */
 function allCategoryLines(range: ReturnType<typeof overviewRange>): CategoryLine[] {
   return fitCategoryLines(range.groups, Number.MAX_SAFE_INTEGER)
 }
 
-/** The Overview's category lines, what its cursor moves over: as bars
- * (`open`, the open groups' ids), each group and the open ones'
- * subcategories, as Budgets does; as text (null), every line. */
 export function overviewCategoryLines(range: ReturnType<typeof overviewRange>, open: number[] | null): CategoryLine[] {
   const all = allCategoryLines(range)
   if (!open) return all
@@ -46,9 +36,6 @@ export function overviewCategoryLines(range: ReturnType<typeof overviewRange>, o
   })
 }
 
-
-/** The Range pane's open groups: as text, all of them (null); as bars,
- * those space has opened. */
 export function openGroups(prefs: { rangeText?: boolean }, u: Pick<UiState, "overviewOpen">): number[] | null {
   return prefs.rangeText ? null : u.overviewOpen
 }

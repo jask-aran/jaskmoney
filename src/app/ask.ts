@@ -3,8 +3,6 @@ import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
 import { searchReport, type Written } from "./searchReport"
 
-/** Have Jev judge the rows the filter's `ask:` terms wait on, and report
- * (after how a smart search wrote the filter, when one did). */
 export async function runAsk(ui: UiStore, data: DataStore, written?: Written): Promise<void> {
   if (!askTerms(data.state.filterExpr).length) return
   try {

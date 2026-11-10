@@ -7,8 +7,6 @@ import { fit, truncate } from "../text"
 import { S } from "./S"
 import { TextInput } from "./TextInput"
 
-/** A window measured in cells, with its cursor entry fully visible.
- * An entry taller than rows gets its own window. End is exclusive. */
 function visibleWindow(heights: readonly number[], cursor: number, rows: number): { start: number; end: number } {
   if (!heights.length) return { start: 0, end: 0 }
   const at = Math.max(0, Math.min(heights.length - 1, cursor))
@@ -30,20 +28,10 @@ const BACKDROP = RGBA.fromInts(0, 0, 0, 150)
 
 type Line = { kind: "heading"; label: string; first: boolean } | { kind: "command"; command: Command; index: number }
 
-/**
- * ctrl+k (app/commands), after opencode's command dialog: a borderless panel
- * over a dimmed screen, a quarter of the way down. The search is its top
- * line (esc at the right). Nothing typed: the commands grouped under bold
- * headings (the last used, this pane's, then the rest); typed: one ranked
- * list, each row naming its group. A row is its label, a short muted
- * description, and its key at the right; the cursor's row is a solid
- * accent bar. The list takes at most half the screen, "…" when there's more.
- */
 export function CommandPalette(props: { commands: Command[]; cursor: number; query: string; lastId: string | null }) {
   const dims = useTerminalDimensions()
   const width = () => Math.min(WIDTH, dims().width - 2)
   const inner = () => width() - INSET * 2
-  // Memos, so a cursor move (a new palette state) doesn't rebuild the rows.
   const searching = createMemo(() => !!props.query.trim())
   const lines = createMemo(() => {
     const out: Line[] = []
@@ -57,7 +45,6 @@ export function CommandPalette(props: { commands: Command[]; cursor: number; que
     })
     return out
   })
-  // A heading after the first takes a blank line above it.
   const height = (line: Line) => line.kind === "heading" && !line.first ? 2 : 1
   const limit = () => Math.max(6, Math.floor(dims().height / 2) - 4)
   const cursorLine = () => Math.max(0, lines().findIndex((line) => line.kind === "command" && line.index === props.cursor))
@@ -83,7 +70,6 @@ export function CommandPalette(props: { commands: Command[]; cursor: number; que
           const right = () => searching() ? [command.category, command.key].filter(Boolean).join(" · ") : command.key ?? ""
           const detail = () => command.disabled ?? command.description ?? ""
           const label = () => truncate(command.label, Math.max(8, inner() - right().length - 2))
-          // The description fills what's left, a space short of the right column.
           const rest = () => Math.max(0, inner() - label().length - right().length - 1)
           const fg = () => command.disabled ? ink.faint : ink.figure
           const muted = () => command.disabled ? ink.faint : ink.note

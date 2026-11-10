@@ -70,7 +70,6 @@ describe("category groups", () => {
 
 describe("tracker series", () => {
   test("weekly totals start on the week start (Monday or Sunday); edge weeks are partial", () => {
-    // 2026-10-01 is a Thursday; 2026-10-05 a Monday.
     const dates = ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06"]
     expect(weeklyTotals(dates, [1, 2, 3, 4, 5, 6])).toEqual([
       { startISO: "2026-10-01", total: 10, days: 4 },

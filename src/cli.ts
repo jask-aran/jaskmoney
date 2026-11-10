@@ -2,12 +2,6 @@ import { spawnSync } from "node:child_process"
 import { dirname } from "node:path"
 import { VERSION, cloneOf, compiled } from "./app/version"
 
-/**
- * Commands that run instead of the app (index.tsx imports this first):
- *   jaskmoney --version
- *   jaskmoney upgrade   (or update): the latest release, as installed;
- *                       --force reinstalls it when it's this one
- */
 export const INSTALLER = "https://raw.githubusercontent.com/jask-aran/jaskmoney/main/scripts/install.sh"
 
 const command = process.argv[2]
@@ -23,9 +17,6 @@ async function upgrade(): Promise<number> {
     console.log(`This jaskmoney is built from a clone${clone ? ` (${clone})` : ""}: update it there with\n  git pull && bun install && bun run build --install`)
     return 0
   }
-  // The installer, run for where this binary is (scripts/install.sh): on
-  // Linux x64 the latest release's binary, unless it's this one; elsewhere
-  // it downloads main and builds. It says what it does.
   let script: string
   try {
     const response = await fetch(INSTALLER, { signal: AbortSignal.timeout(15_000) })

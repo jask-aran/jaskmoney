@@ -1,11 +1,3 @@
-/** OpenTUI schema. v17 lets the budget cycle start early on payday. v16 adds income categories. v15 adds budgets and the budget cycle. v14 let a category be excluded from spending. v13 linked local tags to provider tags. v12 added the category tree (parent, provider category id)
- * and who set each transaction's category. v11 added provider transaction details (categorisable flag,
- * method, card, foreign amount, round-up, cashback). v10 added a per-account
- * sync switch. v9 added synced sources (Up Bank): external identity,
- * settlement status and raw provider fields. v8 replaced the old destructive
- * version fallback with an additive migration registry. v7 was the initial
- * partial OpenTUI port. */
-
 export const SCHEMA_VERSION = 35
 
 export const RULES_V2_TABLE = `CREATE TABLE IF NOT EXISTS rules_v2 (
@@ -19,108 +11,52 @@ export const RULES_V2_TABLE = `CREATE TABLE IF NOT EXISTS rules_v2 (
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );`
 
-/** Columns shared by the fresh schema and the v9 migration. Rows imported from
- * CSV keep source = 'csv' and NULL external fields. */
 export const ACCOUNT_SYNC_COLUMNS_LIST = [
   "source TEXT NOT NULL DEFAULT 'csv'",
-  // Provider account id (Up: accounts.id). Unique per source when present.
   "external_id TEXT",
-  // Provider account kind (Up: TRANSACTIONAL | SAVER | HOME_LOAN).
   "external_kind TEXT",
-  // Provider balance in dollars and when it was read; NULL for CSV accounts.
   "balance REAL",
   "balance_at TEXT",
-  // v10: 0 = the user switched sync off; the account and its transactions
-  // are hidden and skipped by sync, but the row remembers the choice.
   "sync_enabled INTEGER NOT NULL DEFAULT 1",
 ] as const
 
 export const TRANSACTION_SYNC_COLUMNS_LIST = [
   "source TEXT NOT NULL DEFAULT 'csv'",
-  // Provider transaction id (Up: transactions.id); stable from HELD to SETTLED.
   "external_id TEXT",
-  // 'HELD' | 'SETTLED' for synced rows, NULL for CSV rows.
   "status TEXT",
-  // Provider timestamps, RFC 3339 with offset, verbatim.
   "external_created_at TEXT",
   "settled_at TEXT",
   "raw_text TEXT",
   "message TEXT",
-  // Own-account transfer counterpart (Up: relationships.transferAccount).
   "transfer_account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL",
-  // Provider classification, stored raw and not mapped to local categories.
   "ext_category TEXT",
   "ext_parent_category TEXT",
   "ext_tags TEXT NOT NULL DEFAULT '[]'",
 ] as const
 
-/** v12: category tree. A provider category (Up: one of its 4 parents or 40
- * children) has ext_id; local-only categories have NULL ext_id. */
 export const CATEGORY_TREE_COLUMNS_LIST = [
   "parent_id INTEGER REFERENCES categories(id) ON DELETE SET NULL",
   "ext_id TEXT",
 ] as const
 
-/** v14: 1 = money in this category is not spending or income (e.g. transfers
- * to your own accounts elsewhere). The default Transfers category starts at 1. */
 export const CATEGORY_NOT_SPENDING_COLUMN = "not_spending INTEGER NOT NULL DEFAULT 0"
 
-/** v16: 1 = money in this category, or in one under it, is income. The local
- * Income group carries it; Salary, Interest and Other income sit under it. */
 export const CATEGORY_INCOME_COLUMN = "income INTEGER NOT NULL DEFAULT 0"
 
-/** v33: 1 = spending in this category, or one under it, is left out of the overall and account budgets (rent you can't change); its own budget still counts it. */
 export const CATEGORY_BUDGET_IGNORED_COLUMN = "budget_ignored INTEGER NOT NULL DEFAULT 0"
 
-/** v12: who set transactions.category_id. NULL = never set (falls back to the
- * provider's category on sync); 'provider' = mirrors the provider category
- * (sync keeps it in step); 'user' = chosen locally and not pushable (a local-only
- * category, or one Up rejected); 'pending' = chosen locally for the provider,
- * not yet confirmed by it (each Up sync pushes it again); 'rule' = set by a rule; 'type' (v16) = set from the provider's
- * transaction type (Up's Salary, Interest). Sync overwrites only NULL and
- * 'provider'. No CHECK: values are added without a migration. */
 export const CATEGORY_SOURCE_COLUMN = "category_source TEXT"
 
-/**
- * category_source's values (CATEGORY_SOURCE_COLUMN; NULL = never set). How a
- * row moves between them, and where:
- *
- *   any       --choose/accept/undo, Up can hold it--> pending  (core/upPush applyCategories)
- *   any       --choose/accept/undo, local only-->     user
- *   any       --rule, Up can hold it-->               pending  (core applyRules)
- *   any       --rule, local only-->                   rule
- *   pending   --Up confirms-->                        provider, or NULL for no category
- *   pending   --Up refuses the choice-->              the source it had before
- *   pending   --Up refuses on a retry, or the row can't go to Up any more--> user
- *   pending   --no answer-->                          pending  (retried after each sync)
- *   pending   --undo cancels the push-->              user, then the undo's own choice
- *   any       --category deleted-->                  NULL, with category_id NULL (db/client deleteCategory)
- *   NULL, provider --sync-->                         provider or NULL (Up's category)
- *   NULL      --sync, Up's transaction type-->        type     (up/categories)
- *
- * Sync leaves pending, user, rule and type as they are, and leaves a row Up
- * confirmed a change for while it fetched (up/sync `keep`).
- */
 export type CategorySource = "provider" | "pending" | "user" | "rule" | "type"
 
-/** v13: provider tag id (Up: the tag's name, which is its id). NULL = local
- * only (e.g. IGNORE, which never syncs). */
 export const TAG_EXT_COLUMN = "ext_id TEXT"
 
-/** v11: provider transaction details shown in the transaction detail view.
- * All NULL for CSV rows. */
 export const TRANSACTION_DETAIL_COLUMNS_LIST = [
-  // 1/0: the provider accepts a category for this transaction (Up:
-  // isCategorizable; transfers and some payments are not).
   "ext_categorizable INTEGER",
-  // e.g. "Purchase", "BPAY Payment", "Transfer".
   "transaction_type TEXT",
-  // Card purchase method (e.g. "CARD_ON_FILE", "CONTACTLESS") and last 4 digits.
   "card_method TEXT",
   "card_suffix TEXT",
-  // Foreign currency amount as "<currency> <value>", e.g. "USD -12.00".
   "foreign_amount TEXT",
-  // Dollars: round-up taken with this purchase (negative) and cashback (positive).
   "round_up REAL",
   "cashback REAL",
 ] as const
@@ -129,11 +65,8 @@ const ACCOUNT_SYNC_COLUMNS = ACCOUNT_SYNC_COLUMNS_LIST.join(",\n  ")
 const TRANSACTION_SYNC_COLUMNS = [...TRANSACTION_SYNC_COLUMNS_LIST, ...TRANSACTION_DETAIL_COLUMNS_LIST, CATEGORY_SOURCE_COLUMN].join(",\n  ")
 const CATEGORY_TREE_COLUMNS = [...CATEGORY_TREE_COLUMNS_LIST, CATEGORY_NOT_SPENDING_COLUMN, CATEGORY_INCOME_COLUMN, CATEGORY_BUDGET_IGNORED_COLUMN].join(",\n  ")
 
-/** v17: 1 = a cycle starts early on the day pay arrives (see cycleFor). */
 export const BUDGET_PAY_EARLY_COLUMN = "pay_early INTEGER NOT NULL DEFAULT 0"
 
-/** v15: budgets (one per scope: overall, an account, or a category) and the
- * single budget cycle definition shared by all of them. */
 export const BUDGET_SQL = `
 CREATE TABLE IF NOT EXISTS budgets (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,7 +85,6 @@ CREATE TABLE IF NOT EXISTS budget_cycle (
 INSERT OR IGNORE INTO budget_cycle (id, unit, anchor, anchor_date) VALUES (1, 'month', 'calendar', NULL);
 `
 
-/** Category suggestions awaiting the user (v18; v19 took them from Jev, not Clef). */
 const categorySuggestionsTable = (name: string) => `
 CREATE TABLE IF NOT EXISTS ${name} (
   transaction_id INTEGER PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
@@ -165,8 +97,6 @@ CREATE TABLE IF NOT EXISTS ${name} (
 
 export const CATEGORY_SUGGESTIONS_SQL = categorySuggestionsTable("category_suggestions")
 
-/** v19: suggestions come from Jev. Clef's are dropped (asking again is cheap);
- * history's are kept. */
 export const CATEGORY_SUGGESTIONS_V19_SQL = `
 ${categorySuggestionsTable("category_suggestions_v19")}
 INSERT INTO category_suggestions_v19 SELECT * FROM category_suggestions WHERE source = 'history';
@@ -174,27 +104,12 @@ DROP TABLE category_suggestions;
 ALTER TABLE category_suggestions_v19 RENAME TO category_suggestions;
 `
 
-/** v20: the categories a suggestion ranked, most likely first (JSON
- * [[category id, confidence], ...], the pick first); NULL for older ones. */
 export const SUGGESTION_RANKED_COLUMN = "ranked TEXT"
 
-/** v21: a tag's scope, a filter expression (no ask:) naming the rows it can
- * go on: the picker lists it first for them and tag suggestions look only
- * there. NULL = anywhere. Replaces tags.category_id (v21 converts each to
- * its cat: term and clears the column). Approved deviation from legacy
- * (Go: a tag's scope is one category), 2026-10-27. */
 export const TAG_SCOPE_COLUMN = "scope TEXT"
 
-/** v22: dismissals that last. A dismissed category suggestion stays, marked
- * (re-suggesting skips it); a dismissed tag candidate is remembered per tag
- * name (a tag being found may not exist yet). */
 export const SUGGESTION_DISMISSED_COLUMN = "dismissed INTEGER NOT NULL DEFAULT 0"
-/** v32: the suggestion was made knowing what the row bought (its order
- * emails, purchase_lookups): one made without that is asked again once the
- * row's purchase is known (app/purchases). */
 export const SUGGESTION_KNEW_BOUGHT_COLUMN = "knew_bought INTEGER NOT NULL DEFAULT 0"
-/** v34: each budget's amount from a date (NULL: always; NULL amount: none from then), so past cycles are judged
- * against the budget in force then. */
 export const BUDGET_HISTORY_SQL = `
 CREATE TABLE IF NOT EXISTS budget_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -215,10 +130,6 @@ CREATE TABLE IF NOT EXISTS tag_dismissals (
 );
 `
 
-/** v23: how often you've put a description in a category (each accept or
- * choice adds the rows it categorised), which turns into a rule offer; and
- * offers you declined. Needed because a category Up confirms reads as
- * Up's own ('provider'). `description` is lower-case and trimmed. */
 export const CATEGORY_CHOICES_SQL = `
 CREATE TABLE IF NOT EXISTS category_choices (
   description TEXT NOT NULL,
@@ -229,10 +140,6 @@ CREATE TABLE IF NOT EXISTS category_choices (
 );
 `
 
-/** v24: what you (or a rule) did, when: each category set by accepting a
- * suggestion, choosing one, or a rule, and each tag added or removed by the
- * tag picker, a tag review, or a rule. Forward only (no times before v24).
- * The AI's history of a category or tag reads it (domain/aiHistory). */
 export const ACTIVITY_LOG_SQL = `
 CREATE TABLE IF NOT EXISTS category_log (
   id                   INTEGER PRIMARY KEY,
@@ -254,13 +161,11 @@ CREATE TABLE IF NOT EXISTS tag_log (
 CREATE INDEX IF NOT EXISTS tag_log_tag ON tag_log(tag_id, at);
 `
 
-/** v35: latest activity for a transaction/tag or category, and transaction cascades. */
 export const ACTIVITY_LOG_TRANSACTION_INDEXES_SQL = `
 CREATE INDEX IF NOT EXISTS tag_log_transaction_tag ON tag_log(transaction_id, tag_id);
 CREATE INDEX IF NOT EXISTS category_log_transaction_category ON category_log(transaction_id, category_id);
 `
 
-/** v25: rules the AI proposed that you declined, so it isn't asked for them again. */
 export const RULE_DECLINES_SQL = `
 CREATE TABLE IF NOT EXISTS rule_declines (
   expr        TEXT NOT NULL,
@@ -269,7 +174,6 @@ CREATE TABLE IF NOT EXISTS rule_declines (
 );
 `
 
-/** v26: local tag changes that Up has not confirmed; the latest action wins. */
 export const TAG_PUSHES_SQL = `
 CREATE TABLE IF NOT EXISTS tag_pushes (
   transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
@@ -279,7 +183,6 @@ CREATE TABLE IF NOT EXISTS tag_pushes (
 );
 `
 
-/** v27: tag rules the AI proposed that you declined. */
 export const RULE_TAG_DECLINES_SQL = `
 CREATE TABLE IF NOT EXISTS rule_tag_declines (
   expr   TEXT NOT NULL,
@@ -288,9 +191,6 @@ CREATE TABLE IF NOT EXISTS rule_tag_declines (
 );
 `
 
-/** Jev's answer to whether a merchant's name says what was bought
- * (domain/questions merchantBreadthQuestion), keyed by the lowercased name:
- * asked once per name. */
 export const MERCHANT_BREADTH_SQL = `
 CREATE TABLE IF NOT EXISTS merchant_breadth (
   merchant    TEXT PRIMARY KEY,
@@ -299,11 +199,6 @@ CREATE TABLE IF NOT EXISTS merchant_breadth (
 );
 `
 
-/** What an Amazon or eBay row bought, from its order emails (through
- * Executor; ai/orderEmails, app/purchases). status: found (items saved;
- * never looked up again), waiting (nothing yet; looked up again while the
- * row is young, as emails can come after the charge), none (given up).
- * email_key marks the email a match used, so no other row takes it. */
 export const PURCHASE_LOOKUPS_SQL = `
 CREATE TABLE IF NOT EXISTS purchase_lookups (
   transaction_id INTEGER PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
@@ -318,8 +213,6 @@ CREATE TABLE IF NOT EXISTS purchase_lookups (
 );
 `
 
-/** What the user says about a merchant ("varies: gifts, homewares", "always
- * groceries"), keyed like merchant_breadth: shown to Jev with the merchant. */
 export const MERCHANT_NOTES_SQL = `
 CREATE TABLE IF NOT EXISTS merchant_notes (
   merchant   TEXT PRIMARY KEY,
@@ -328,9 +221,6 @@ CREATE TABLE IF NOT EXISTS merchant_notes (
 );
 `
 
-/** v30: a tag's scope is categories again (a group covers those under it),
- * plus `about`, words Jev reads when finding its transactions. The v21
- * expression column (tags.scope) is converted and left empty. */
 export const TAG_CATEGORIES_SQL = `
 CREATE TABLE IF NOT EXISTS tag_categories (
   tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
@@ -460,7 +350,6 @@ export const DEFAULT_CATEGORIES: { name: string; color: string; sortOrder: numbe
   { name: "Uncategorised", color: "#7f849c", sortOrder: 10, isDefault: 1 },
 ]
 
-/** The income group's categories, made under the local Income category. */
 export const INCOME_CATEGORIES = [
   { name: "Salary", color: "#a6e3a1" },
   { name: "Interest", color: "#94e2d5" },

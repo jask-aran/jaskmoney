@@ -13,25 +13,6 @@ import { data } from "../state/dataStore"
 import { jaskmoneyHome } from "../storage/home"
 import { scoreSuggestions, suggestionText, type Hidden, type SuggestionReport } from "./score"
 
-/**
- * Evaluating category suggestions (history, merchant checks, Jev) against
- * a frozen demo made from your spending (domain/demo): its hidden rows'
- * true categories are known. The set is made once into ~/.jaskmoney/eval
- * (never the repo: it comes from your data) and every run works on a
- * throwaway copy, so runs compare like for like. Each run's report is kept
- * in eval/runs and compared with the last run on the same set.
- *
- *   bun run eval               all hidden rows
- *   bun run eval --limit 300   a fixed sample of them (the same each time)
- *   bun run eval --fresh       make the set again from today's history
- *   bun run eval --set 2       another set (its own seed: other merchants held out);
- *                              tune on one, confirm a change on the others
- *   bun run eval --note "…"    a label for the run
- *   bun run eval --misses [category]   also list each wrong pick (printed, never saved)
- *
- * Jev's price is $0.042 per million input tokens; tokens here are the
- * client's estimate (JSON characters / 3, erring large).
- */
 const JEV_PRICE_PER_TOKEN = 0.042 / 1e6
 const SEED = 29
 
@@ -39,9 +20,6 @@ const args = process.argv.slice(2)
 const flag = (name: string) => args.includes(`--${name}`)
 const option = (name: string) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : undefined }
 
-// --set N: another set, its own seed and so its own held-out merchants.
-// Tune on one, confirm on others: a change that only helps the rows it was
-// tuned on is fitting them, not improving suggestions. Set 0 is the default.
 const SET = Number(option("set") ?? 0)
 if (!Number.isInteger(SET) || SET < 0) throw new Error("--set takes a whole number")
 const dir = SET ? join(jaskmoneyHome(), "eval", `set-${SET}`) : join(jaskmoneyHome(), "eval")
@@ -55,7 +33,6 @@ interface Usage { requests: number; questions: number; tokens: number; failures:
 
 function makeSet(): SetMeta {
   mkdirSync(dir, { recursive: true, mode: 0o700 })
-  // Read a copy, so nothing here touches the real database.
   const copy = join(mkdtempSync(join(tmpdir(), "jaskmoney-eval-")), "source.db")
   copyDb(defaultDbPath(), copy)
   const source = openDb(copy)
@@ -70,13 +47,11 @@ function makeSet(): SetMeta {
   return meta
 }
 
-/** A consistent copy of a database, its write-ahead log included. */
 function copyDb(from: string, to: string) {
   const db = new Database(from, { readonly: true })
   try { db.run(`VACUUM INTO '${to.replace(/'/g, "''")}'`) } finally { db.close() }
 }
 
-/** A fixed sample: the same rows every run on a set. */
 function sample<T extends { id: number }>(rows: T[], limit: number): T[] {
   if (rows.length <= limit) return rows
   let state = SEED
@@ -135,8 +110,6 @@ async function main() {
   if (previous) console.log(`compared with ${previous.when.slice(0, 16)} (${previous.commit}${previous.note ? `, ${previous.note}` : ""}): changes in brackets`)
   console.log("")
   for (const line of suggestionText(report, previous?.report)) console.log(line)
-  // --misses [truth]: each wrong pick, by description, to see why (printed
-  // only, never saved: the descriptions are yours).
   if (flag("misses")) {
     const only = option("misses")?.startsWith("--") ? undefined : option("misses")
     const wrong = chosen.flatMap((h) => {

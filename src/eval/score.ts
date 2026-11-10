@@ -1,14 +1,6 @@
 import { ACCEPT_ALL_AT } from "../domain/questions"
 import type { CategorySuggestion } from "../domain/types"
 
-/**
- * Scoring the decision models against the demo's hidden truth (eval/run):
- * what share of the hidden rows got a suggestion, how often it was right,
- * by where it came from (history or Jev) and by whether history could know
- * the merchant at all, how right the picks accept-all (Y) would take are,
- * and the commonest confusions. Pure: a report from the rows, their truth
- * and the suggestions.
- */
 export interface Hidden { id: number; truth: string; description: string; heldOut: boolean }
 
 interface Tally { rows: number; suggested: number; right: number; top3: number; sure: number; sureRight: number }
@@ -18,9 +10,7 @@ export interface SuggestionReport {
   bySource: Record<string, Tally>
   heldOut: Tally
   known: Tally
-  /** Accuracy by the suggestion's confidence: under 50%, 50–80%, 80% and over. */
   calibration: Array<{ band: string; rows: number; right: number }>
-  /** The commonest wrong picks: truth → pick, how many. */
   confusions: Array<{ truth: string; pick: string; rows: number }>
 }
 
@@ -61,7 +51,6 @@ export function scoreSuggestions(hidden: Hidden[], suggestions: Record<number, C
 
 const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : "–")
 
-/** The report as text: a table, the calibration, the confusions; with the previous run's deltas. */
 export function suggestionText(report: SuggestionReport, previous?: SuggestionReport): string[] {
   const delta = (now: number, was: number | undefined) => (was == null ? "" : ` (${now - was >= 0 ? "+" : ""}${(now - was).toFixed(1)})`)
   const rate = (t: Tally, n: number) => (t.suggested ? (100 * n) / t.suggested : 0)

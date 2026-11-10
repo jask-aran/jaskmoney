@@ -15,7 +15,6 @@ function plan(db: ReturnType<typeof testDb>, sql: string) {
 
 test("v35 adds activity indexes and preserves data with or without existing indexes", () => {
   for (const alreadyPresent of [false, true]) {
-    // Recreate only the schema in memory as v34, without the new index block.
     const legacy = SCHEMA_SQL.replace(ACTIVITY_LOG_TRANSACTION_INDEXES_SQL, "")
     using old = new Database(":memory:")
     old.exec("PRAGMA foreign_keys = ON")

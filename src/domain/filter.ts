@@ -1,8 +1,3 @@
-/**
- * Port of Go filter.go — lexer + recursive-descent parser + eval.
- * Permissive parse for live `/` input; strict for committed/save surfaces.
- */
-
 import { canonicalFilter, parseFilter, type FilterNode } from "./filterParse"
 
 export type { FilterNode } from "./filterParse"
@@ -63,12 +58,6 @@ function filterContainsFieldPredicate(node: FilterNode | null): boolean {
 
 export interface FilterNote { text: string; tone: "error" | "warn" | "muted" }
 
-/**
- * What the search bar says beside its dot: why the input doesn't parse
- * (searched as one phrase), else what saving it would refuse (with the
- * live reading of an ambiguous name: "finding either"), else, when
- * something was forgiven or guessed, the full form it reads as.
- */
 export function filterNote(input: string, err: string, hints: string[], names?: FilterNames): FilterNote | null {
   if (!input.trim()) return null
   if (err) return { text: `${err}: searching it as one phrase`, tone: "error" }
@@ -80,14 +69,11 @@ export function filterNote(input: string, err: string, hints: string[], names?: 
   return hints.length && full.text ? { text: `→ ${full.text}`, tone: "muted" } : null
 }
 
-/** A filter as it's typed: what it means, what's wrong with it and the
- * note the bar shows. The store's (setFilterLive) and the setup tour's. */
 export function liveFilter(input: string, names: FilterNames): { expr: FilterNode | null; err: string; note: FilterNote | null } {
   const { expr, err, hints } = reparseFilterInput(input, names)
   return { expr, err, note: filterNote(input, err, hints, names) }
 }
 
-/** Live reparse: permissive + metadata bare words + fallback. */
 export function reparseFilterInput(input: string, names?: FilterNames): {
   expr: FilterNode | null
   err: string

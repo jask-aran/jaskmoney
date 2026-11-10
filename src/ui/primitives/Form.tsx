@@ -4,12 +4,6 @@ import type { FormField, FormNote } from "../../state/settingsForm"
 import { S } from "./S"
 import { TextInput } from "./TextInput"
 
-/**
- * Editor fields, one per line: a marker on the focused field, labels padded
- * to one column, then the value. A focused text field shows a caret; a
- * focused choice or toggle is wrapped in ‹ ›; a picker says enter opens it;
- * a secret shows only its mask (`display`), with a caret at the end.
- */
 export function Form(props: { fields: FormField[]; cursor: number; caret: number; note?: FormNote | null }) {
   const labelWidth = () => Math.max(...props.fields.map((f) => f.label.length)) + 2
   return (

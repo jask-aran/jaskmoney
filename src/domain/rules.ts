@@ -21,31 +21,24 @@ export interface DryRunReport extends RuleRunResult {
   changes: { id: number; categoryId: number | null; categorySet: boolean; tagIds: number[] }[]
 }
 
-/** The names a filter matches a transaction by, from ids: its category's
- * name ("Uncategorised" without one) and its tags' names. Shared by rule
- * evaluation and the editors' live match counts. */
 export function filterRowNames(categories: Category[], tags: Tag[]) {
   const categoryNames = new Map(categories.map((category) => [category.id, category.name]))
   const groupNames = new Map(categories.map((category) => [category.id, categoryNames.get(category.parentId ?? -1) ?? ""]))
   const tagNames = new Map(tags.map((tag) => [tag.id, tag.name]))
   const income = incomeCategoryIds(categories)
   return {
-    // The row as a filter sees it once `categoryId` is set.
     row: (transaction: Transaction, categoryId: number | null, tagIds: Iterable<number>) => ({
       ...transaction,
       categoryId,
       income: categoryId != null && income.has(categoryId),
       categoryName: categoryNames.get(categoryId ?? -1) ?? "Uncategorised",
-      // cat: on a group takes in its subcategories.
       categoryGroup: groupNames.get(categoryId ?? -1) ?? "",
       tagNames: [...tagIds].map((id) => tagNames.get(id)).filter((name): name is string => !!name),
     }),
   }
 }
 
-/** Evaluate in stored order. Each rule sees the changes from earlier rules. */
 export function dryRunRules(transactions: Transaction[], rules: Rule[], savedFilters: SavedFilter[], categories: Category[], tags: Tag[]): DryRunReport {
-  // A rule must decide each row on its own: not with Jev, nor a top: cut.
   const filters = new Map(savedFilters.map((filter) => {
     const parsed = parseFilterStrict(filter.expr)
     const blocked = notForRules(parsed.node)

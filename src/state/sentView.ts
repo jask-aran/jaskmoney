@@ -3,16 +3,6 @@ import type { SentPart } from "../app/sentPreview"
 import { BLOCKS, QUERIES, type QueryId } from "../ai/catalog"
 import type { HelpLine, HelpTone } from "./searchHelp"
 
-/**
- * A query (ai/catalog) as lines for Settings › AI models: readable first,
- * then its exact request (app/sentPreview) as an outline (keys, nested
- * values indented, long text wrapped, a list that fits on one line). A
- * family of like questions (kind1 … kind51) shows its first and how many
- * more, so a smart search's 100 category questions read as one. The
- * request's wording is as sent.
- */
-
-/** A string that is a JSON object, parsed; else null. */
 function jsonText(text: string): Record<string, unknown> | null {
   if (!text.trimStart().startsWith("{")) return null
   try { const v: unknown = JSON.parse(text); return v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : null } catch { return null }
@@ -20,7 +10,6 @@ function jsonText(text: string): Record<string, unknown> | null {
 
 const family = (id: string) => id.replace(/\d+$/, "")
 
-/** Question ids grouped: the first of each family of 3 or more kept, with how many it stands for. */
 function condense(questions: Record<string, unknown>): Array<[string, unknown] | { more: number; first: string; last: string }> {
   const ids = Object.keys(questions)
   const sizes = new Map<string, string[]>()
@@ -54,8 +43,6 @@ function outline(key: string, value: unknown, indent: number, width: number, out
     out.push([{ text: `${pad}${label}`, tone: "key" }, { text, tone: "text" }])
     return
   }
-  // A list, or a list's item, that fits on a line is its JSON there (the
-  // rule brief's 50 categories, a category's examples).
   const compact = JSON.stringify(value)
   if ((key.startsWith("[") || Array.isArray(value)) && pad.length + label.length + compact.length <= width) {
     out.push([{ text: `${pad}${label}`, tone: "key" }, { text: compact, tone: "text" }])
@@ -74,24 +61,16 @@ function outline(key: string, value: unknown, indent: number, width: number, out
   }
 }
 
-/** The exact request, as an outline under its address. */
 function requestLines(part: SentPart, width: number): HelpLine[] {
   const out: HelpLine[] = [[{ text: part.to, tone: "key" }]]
   outline("", part.body, 2, width, out)
   return out
 }
 
-/** `text` beside a label column, wrapped under itself. */
 function labelled(label: string, text: string, width: number, column = 10, tone: HelpTone = "text"): HelpLine[] {
   return wrapText(text, Math.max(20, width - column)).map((line, i) => [{ text: (i ? "" : label).padEnd(column), tone: "muted" as const }, { text: line, tone }])
 }
 
-/**
- * A query, readable first: what it asks, what comes back and what the app
- * does with it, when it's sent, the code; then each context block with
- * where its field goes, what it says and where it comes from; then the
- * exact request (when built) with what it was built for.
- */
 export function queryLines(id: QueryId, model: string, part: SentPart | null, width: number, error: string | null = null): HelpLine[] {
   const q = QUERIES[id]
   const out: HelpLine[] = [
@@ -107,7 +86,6 @@ export function queryLines(id: QueryId, model: string, part: SentPart | null, wi
   for (const use of q.context) {
     const block = BLOCKS[use.block]
     const where = use.via === "tools" ? "in the tools' results" : use.fields.length ? `→ ${use.fields.join(", ")}` : "decides, not sent"
-    // The code beside the name, or under it when it doesn't fit.
     const head = `  ${block.name}  ${where}`
     if (head.length + 2 + block.code.length <= width) out.push([{ text: `  ${block.name}`, tone: "head" }, { text: `  ${where}`, tone: "key" }, { text: `  ${block.code}`, tone: "muted" }])
     else {

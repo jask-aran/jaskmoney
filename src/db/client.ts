@@ -94,14 +94,11 @@ export function defaultDbPath(): string {
 
 export function openDb(path: string = defaultDbPath()): Db {
   if (path !== ":memory:") {
-    // Owner-only, as the keys beside it are: a new folder is 0700, and
-    // the database 0600 before its write-ahead log exists (SQLite gives
-    // the -wal and -shm files the database's mode).
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   }
   const db = new Database(path, { create: true })
   if (path !== ":memory:") {
-    try { chmodSync(path, 0o600) } catch { /* not ours to change (a shared path): leave it */ }
+    try { chmodSync(path, 0o600) } catch {}
   }
   db.exec("PRAGMA foreign_keys = ON;")
   db.exec("PRAGMA journal_mode = WAL;")
@@ -109,14 +106,12 @@ export function openDb(path: string = defaultDbPath()): Db {
   return db
 }
 
-/** Migration bodies are deliberately additive. A failed migration rolls back
- * before the database is touched, instead of silently recreating a profile. */
 const MIGRATIONS: Record<number, (db: Db) => void> = {
   8: (db) => db.exec(`${RULES_V2_TABLE}
     CREATE INDEX IF NOT EXISTS idx_rules_v2_sort ON rules_v2(sort_order);`),
   9: (db) => {
     for (const column of ACCOUNT_SYNC_COLUMNS_LIST) {
-      if (column.startsWith("sync_enabled")) continue // added by v10
+      if (column.startsWith("sync_enabled")) continue
       db.exec(`ALTER TABLE accounts ADD COLUMN ${column}`)
     }
     for (const column of TRANSACTION_SYNC_COLUMNS_LIST) db.exec(`ALTER TABLE transactions ADD COLUMN ${column}`)
@@ -143,9 +138,6 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   16: (db) => {
     db.exec(`ALTER TABLE categories ADD COLUMN ${CATEGORY_INCOME_COLUMN}`)
     const group = ensureIncomeCategories(db)
-    // Income is a group now, which nothing is assigned to directly: its rows
-    // go to Salary when Up says so, else Other income, and rules and tags
-    // that set it follow.
     const id = (name: string) => db.query<{ id: number }, [string, number]>("SELECT id FROM categories WHERE name = ? AND parent_id = ?").get(name, group)!.id
     const salary = id("Salary"), other = id("Other income")
     db.query("UPDATE transactions SET category_id = CASE WHEN transaction_type = 'Salary' THEN ? ELSE ? END WHERE category_id = ?").run(salary, other, group)
@@ -178,9 +170,6 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
     db.exec(TAG_CATEGORIES_SQL)
     const columns = db.query<{ name: string }, []>("PRAGMA table_info(tags)").all().map((c) => c.name)
     if (!columns.includes("about")) db.exec(`ALTER TABLE tags ADD COLUMN ${TAG_ABOUT_COLUMN}`)
-    // Each scope's cat: terms become its categories; a group's children,
-    // spelled out by v21, fold back into the group. Anything else (a trip's
-    // dates, other terms) is dropped: a trip is found by its dates at review.
     const categories = db.query<{ id: number; name: string; parentId: number | null }, []>("SELECT id, name, parent_id AS parentId FROM categories").all()
     const link = db.query("INSERT OR IGNORE INTO tag_categories (tag_id, category_id) VALUES (?, ?)")
     for (const tag of db.query<{ id: number; scope: string }, []>("SELECT id, scope FROM tags WHERE TRIM(COALESCE(scope, '')) != ''").all()) {
@@ -196,22 +185,18 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   24: (db) => db.exec(ACTIVITY_LOG_SQL),
   23: (db) => {
     db.exec(CATEGORY_CHOICES_SQL)
-    // Rows you categorised that Up couldn't take still say so.
     db.exec(`INSERT OR IGNORE INTO category_choices (description, category_id, times)
       SELECT lower(trim(description)), category_id, COUNT(*) FROM transactions
       WHERE category_source IN ('user', 'pending') AND category_id IS NOT NULL GROUP BY 1, 2`)
   },
   22: (db) => {
-    // Tests wind a fresh schema back to older versions: add only if missing.
     const columns = db.query<{ name: string }, []>("PRAGMA table_info(category_suggestions)").all().map((c) => c.name)
     if (!columns.includes("dismissed")) db.exec(`ALTER TABLE category_suggestions ADD COLUMN ${SUGGESTION_DISMISSED_COLUMN}`)
     db.exec(TAG_DISMISSALS_SQL)
   },
   21: (db) => {
-    // Tests wind a fresh (scoped) schema back to older versions: add only if missing.
     const columns = db.query<{ name: string }, []>("PRAGMA table_info(tags)").all().map((c) => c.name)
     if (!columns.includes("scope")) db.exec(`ALTER TABLE tags ADD COLUMN ${TAG_SCOPE_COLUMN}`)
-    // Each category scope becomes its cat: term (a group's takes its children too).
     const categories = db.query<{ id: number; name: string; parentId: number | null }, []>("SELECT id, name, parent_id AS parentId FROM categories").all()
     for (const tag of db.query<{ id: number; categoryId: number }, []>("SELECT id, category_id AS categoryId FROM tags WHERE category_id IS NOT NULL").all()) {
       const category = categories.find((c) => c.id === tag.categoryId)
@@ -220,11 +205,6 @@ const MIGRATIONS: Record<number, (db: Db) => void> = {
   },
 }
 
-/**
- * The income group: the local top-level Income category, marked income, with
- * INCOME_CATEGORIES under it. Adds what is missing (a local category of the
- * same name moves under the group); renames nothing. Returns the group's id.
- */
 function ensureIncomeCategories(db: Db): number {
   const local = (where: string) => db.query<{ id: number }, []>(`SELECT id FROM categories WHERE ext_id IS NULL AND parent_id IS NULL AND ${where} ORDER BY id LIMIT 1`).get()?.id
   let group = local("income = 1") ?? local("name = 'Income'")
@@ -259,8 +239,6 @@ export function ensureSchema(db: Db) {
         migrate(db)
         db.query("UPDATE schema_meta SET version = ?").run(version)
       }
-      // v7 OpenTUI profiles already contain the base tables. Do not recreate
-      // them: it would mask an incompatible hand-edited profile.
       if (!tableExists(db, "categories") || !tableExists(db, "transactions") || !tableExists(db, "tags")) {
         throw new Error("database schema is incomplete; database was left untouched")
       }
@@ -268,7 +246,7 @@ export function ensureSchema(db: Db) {
     seedDefaults(db)
     db.exec("COMMIT")
   } catch (error) {
-    try { db.exec("ROLLBACK") } catch { /* transaction did not start */ }
+    try { db.exec("ROLLBACK") } catch {}
     throw error
   }
 }
@@ -282,7 +260,6 @@ function seedDefaults(db: Db) {
       "INSERT INTO categories (name, color, sort_order, is_default, not_spending) VALUES (?, ?, ?, ?, ?)",
     )
     for (const c of DEFAULT_CATEGORIES) {
-      // Transfers start as not-spending, as the v14 migration sets them.
       ins.run(c.name, c.color, c.sortOrder, c.isDefault, c.name === "Transfers" ? 1 : 0)
     }
     ensureIncomeCategories(db)
@@ -308,7 +285,6 @@ export interface DbInfo {
   importCount: number
   ruleCount: number
   path: string
-  /** Up sync bookkeeping from sync_state; null before the first attempt. */
   upLastSyncedAt: string | null
   upLastError: string | null
 }

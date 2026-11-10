@@ -20,28 +20,23 @@ type Core = ReturnType<typeof createMirror>["core"]
 type SetAccountSelection = ReturnType<typeof createViewControls>["setAccountSelection"]
 
 export function createClientCommands(state: DataState, core: Core, setAccountSelection: SetAccountSelection) {
-  /** The import profiles for a file, by its name. */
   function profileMatches(path: string): ImportProfile[] {
     return matchingProfiles(unwrap(state.importProfiles), path.split(/[\\/]/).pop() ?? path)
   }
 
-  /** A row's provider details (the TUI's detail view reads them as a resource). */
   const transactionDetail = (id: number) => core.link.call("transactionDetail", { id })
 
-  /** What the general model reads to write rules, and the rules declined so far. */
   async function ruleWriterInput(): Promise<{ history: HistoryData; declined: CoreResult<"ruleWriterInput">["declined"] }> {
     const { history, declined } = await core.link.call("ruleWriterInput", {})
     return { history: { ...history, categorySources: history.categorySources ? new Map(history.categorySources) : undefined }, declined }
   }
 
-  /** Demo mode's previous account selection, put back when it ends. */
   let selectionBeforeDemo: AccountSelection | null = null
 
   async function enterDemo(): Promise<number> {
     if (state.demo) return core.link.call("enterDemo", {})
     selectionBeforeDemo = state.accountSelection
     const rows = core.link.call("enterDemo", {})
-    // At once, as the switch began: what the caller sets next (restored prefs) wins.
     setAccountSelection("all")
     return rows
   }
@@ -80,7 +75,6 @@ export function createTransactionCommands(core: Core) {
     suggestCategories,
     resuggestLike: (ids: number[], ai?: Pick<JevClient, "judge">) => core.link.call("resuggestLike", { ids }, { ai }),
     setMerchantNote: (description: string, note: string, ai?: Pick<JevClient, "judge">) => core.link.call("setMerchantNote", { description, note }, { ai }),
-    /** `session`: the one the lookups were made for, so they never land on another database's rows. */
     recordPurchases: (lookups: PurchaseLookup[], ai?: Pick<JevClient, "judge">, session?: number) => core.link.call("recordPurchases", { lookups, session }, { ai }),
     acceptSuggestions: (ids: number[], onProgress?: (pushed: number, total: number) => void) =>
       core.link.call("acceptSuggestions", { ids }, { onProgress: (p) => onProgress?.(p.pushed, p.total) }),
@@ -96,9 +90,7 @@ export function createSettingsCommands(core: Core) {
   }
 
   return {
-    /** Save (or with null, remove) API keys entered in Settings. */
     saveApiKeys: (patch: Partial<Record<CredentialName, string | null>>) => core.link.call("saveApiKeys", { patch }),
-    /** After a sign-in or sign-out. */
     refreshApiKeys: () => core.link.call("refreshApiKeys", {}),
     findCloudflareAccount: () => core.link.call("findCloudflareAccount", {}),
     signInLlm: (provider: LlmProvider, onProgress: (p: SignInProgress) => void, signal?: AbortSignal, models?: Pick<Models, "login">) =>
@@ -140,7 +132,6 @@ export function createDataCommands(state: DataState, core: Core, setAccountSelec
     commitPreview: (preview: CoreParams<"commitPreview">["preview"], skipDuplicates: boolean) => core.link.call("commitPreview", { preview, skipDuplicates }),
     syncUp: (off?: string[]) => core.link.call("syncUp", off ? { off } : {}),
 
-    /** Returns the number of transactions removed when switching sync off. */
     setAccountSync: (accountId: number, enabled: boolean) => core.link.call("setAccountSync", { accountId, enabled }),
     setBudget: (scope: BudgetScope, amount: number, from?: string, replaces?: BudgetScope) => core.link.call("setBudget", { scope, amount, from, replaces }),
     removeBudget: (scope: BudgetScope, from?: string) => core.link.call("removeBudget", { scope, from }),

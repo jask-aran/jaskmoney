@@ -4,15 +4,8 @@ import { dateTokenBounds } from "./filterParse"
 import { eqFold, filterExprString, textContains } from "./filterText"
 import { isIncome, isSpending } from "./moneyRules"
 
-/** Jev's verdict on whether a row matches an `ask:` term's words; undefined
- * while it hasn't judged the row. */
 export type AskVerdict<T> = (words: string, t: T) => boolean | undefined
 
-/**
- * Whether a row passes the filter. `ask:` terms take Jev's verdicts from
- * `ask`; a row whose result hangs on a term not judged yet does not pass
- * (with no `ask` at all, as in rules, that is every such row).
- */
 export function evalFilter<T extends FilterTxn>(
   node: FilterNode | null,
   t: T,
@@ -23,14 +16,10 @@ export function evalFilter<T extends FilterTxn>(
 
 const unjudged = () => undefined
 
-/** Whether the row's match waits on an unjudged `ask:` term (neither
- * matched nor ruled out without it). */
 export function undecided<T extends FilterTxn>(node: FilterNode | null, t: T, ask: AskVerdict<T>): boolean {
   return verdict3(node, t, ask) === undefined
 }
 
-/** Three-valued evaluation: an unjudged `ask:` term is unknown (undefined),
- * and AND / OR / NOT carry the unknown through. */
 function verdict3<T extends FilterTxn>(node: FilterNode | null, t: T, ask: AskVerdict<T>): boolean | undefined {
   if (!node) return true
   const children = node.children ?? []
@@ -42,8 +31,6 @@ function verdict3<T extends FilterTxn>(node: FilterNode | null, t: T, ask: AskVe
       if (node.op === "contains_meta") {
         if (textContains(t.categoryName, needle)) return true
         if (t.tagNames.some((tg) => textContains(tg, needle))) return true
-        // Approved addition (2026-10-30): what it bought, its message and
-        // your notes too. The raw text stays under info: (city names).
         if (t.bought?.some((item) => textContains(item.name, needle))) return true
         if (t.message && textContains(t.message, needle)) return true
         if (t.notes && textContains(t.notes, needle)) return true
@@ -76,14 +63,12 @@ function isAsk(node: FilterNode): boolean {
   return node.kind === "field" && node.field === "ask"
 }
 
-/** The distinct words of every `ask:` term, in order. */
 export function askTerms(node: FilterNode | null): string[] {
   if (!node) return []
   if (isAsk(node)) return [node.value ?? ""].filter(Boolean)
   return [...new Set((node.children ?? []).flatMap(askTerms))]
 }
 
-/** Whether the filter limits dates anywhere. */
 export function hasDateTerm(node: FilterNode | null): boolean {
   if (!node) return false
   if (node.kind === "field" && node.field === "date") return true
@@ -97,7 +82,6 @@ function evalField(node: FilterNode, t: FilterTxn): boolean {
       return textContains(t.description, node.value ?? "")
     case "note":
       return textContains(t.notes, node.value ?? "")
-    // Approved addition to legacy Go filter.go (2026-10-30): info:.
     case "info":
       return (t.bought?.some((item) => textContains(item.name, node.value ?? "")) ?? false)
         || (t.message != null && textContains(t.message, node.value ?? ""))
@@ -120,7 +104,6 @@ function evalField(node: FilterNode, t: FilterTxn): boolean {
       return evalAmount(node, t.amount)
     case "date":
       return evalDate(node, t.dateISO)
-    // Each row passes; applyTop cuts the result.
     case "top":
       return true
     default:
@@ -168,7 +151,6 @@ function evalDate(node: FilterNode, dateISO: string): boolean {
   return false
 }
 
-/** The filter's `top:` count, if it has one. */
 export function topCount(node: FilterNode | null): number | null {
   if (!node) return null
   const level = node.kind === "and" ? (node.children ?? []) : [node]
@@ -176,9 +158,6 @@ export function topCount(node: FilterNode | null): number | null {
   return top ? Number(top.value) : null
 }
 
-/** `rows` (already filtered) cut to the filter's `top:` count: the biggest
- * by amount either way (money out or in), ties the newest. Without top:,
- * `rows` as they are. */
 export function applyTop<T extends { amount: number; dateISO: string; id: number }>(node: FilterNode | null, rows: T[]): T[] {
   const n = topCount(node)
   if (n == null) return rows
@@ -186,9 +165,6 @@ export function applyTop<T extends { amount: number; dateISO: string; id: number
   return rows.filter((t) => keep.has(t))
 }
 
-/** For a filter of plain words that finds nothing because no row has them
- * all ("mcdonalds kfc"), though each finds some: the same words joined by
- * OR. Else null. */
 export function eitherInstead<T extends FilterTxn>(node: FilterNode | null, rows: T[]): string | null {
   if (node?.kind !== "and") return null
   const words = node.children ?? []
@@ -198,8 +174,6 @@ export function eitherInstead<T extends FilterTxn>(node: FilterNode | null, rows
   return filterExprString({ kind: "or", children: words })
 }
 
-/** Why a filter can't drive a rule (which decides each row on its own), or
- * null: ask: needs Jev, top: needs the whole set. */
 export function notForRules(node: FilterNode | null): string | null {
   if (askTerms(node).length) return "ask: can't be used in a rule"
   if (topCount(node) != null) return "top: can't be used in a rule"

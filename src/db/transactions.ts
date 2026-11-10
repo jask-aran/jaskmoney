@@ -4,7 +4,6 @@ import type { CategorySource } from "./schema"
 import type { BoughtItem, ImportRecord, Transaction } from "../domain/types"
 import type { Db } from "./client"
 
-/** Every shown row, newest first; or just the rows of `ids` (those shown). */
 export function loadTransactions(db: Db, ids?: readonly number[]): Transaction[] {
   const only = ids ? ` AND t.id IN (${ids.map(() => "?").join(",")})` : ""
   const params = ids ? [...ids] : []
@@ -55,7 +54,6 @@ export function loadTransactions(db: Db, ids?: readonly number[]): Transaction[]
   return rows.map(({ createdAt, boughtJson, ...r }) => ({
     ...r,
     ...(boughtJson ? { bought: parseItems(boughtJson) } : {}),
-    // RFC 3339 with its offset (+11:00, a trip's +08:00): parsed to one clock.
     createdMs: createdAt ? Date.parse(createdAt) || null : null,
     internal: !!r.internal,
     excluded: !!r.internal || !!(r as { notSpendingCategory?: number }).notSpendingCategory,
@@ -63,12 +61,9 @@ export function loadTransactions(db: Db, ids?: readonly number[]): Transaction[]
     tagNames: tagNameMap.get(r.id) ?? [],
     tagColors: tagColorMap.get(r.id) ?? [],
     tagIds: tagIdMap.get(r.id) ?? [],
-  // Newest first by time, not just by day (domain/chronology).
   })).sort(newestFirst)
 }
 
-/** Saved items; a lookup saved before prices were kept (plain names) is
- * `legacy`, and is looked up once more for its prices and quantities. */
 function readItems(json: string): { items: BoughtItem[]; legacy: boolean } {
   try {
     const v: unknown = JSON.parse(json)
@@ -81,14 +76,12 @@ function readItems(json: string): { items: BoughtItem[]; legacy: boolean } {
 }
 const parseItems = (json: string): BoughtItem[] => readItems(json).items
 
-/** A row's purchase lookup (purchase_lookups). */
 export interface PurchaseLookup {
   transactionId: number
   status: "found" | "waiting" | "none"
   source: string | null
   order: string | null
   items: BoughtItem[]
-  /** Saved before prices were kept: looked up once more. */
   legacy?: boolean
   emailKey: string | null
   refundOf: number | null
@@ -119,15 +112,12 @@ export function loadImports(db: Db, limit = 12): ImportRecord[] {
   return db.query(`SELECT id, filename, row_count AS rowCount, imported_at AS importedAt FROM imports ORDER BY imported_at DESC, id DESC LIMIT ?`).all(limit) as ImportRecord[]
 }
 
-/** Legacy-compatible: classification data and accounts survive a clear. */
 export function clearAllData(db: Db): void {
   db.transaction(() => {
     db.exec(`DELETE FROM transactions; DELETE FROM imports;`)
   })()
 }
 
-/** Set a transaction's category and who set it (see CATEGORY_SOURCE_COLUMN).
- * `provider` also records the provider's category ids after a push. */
 export function setTransactionCategory(
   db: Db,
   txnId: number,
@@ -143,7 +133,6 @@ export function setTransactionCategory(
   }
 }
 
-/** Everything the transaction detail view shows beyond the table row. */
 export interface TransactionDetail {
   id: number
   source: string
@@ -187,7 +176,7 @@ export function loadTransactionDetail(db: Db, id: number): TransactionDetail | n
     WHERE t.id = ?`).get(id) as (Omit<TransactionDetail, "extTags" | "extCategorizable"> & { extTags: string; extCategorizable: number | null }) | null
   if (!row) return null
   let extTags: string[] = []
-  try { extTags = decodeStoredTags(row.extTags || "[]") } catch { /* malformed provider data: show none */ }
+  try { extTags = decodeStoredTags(row.extTags || "[]") } catch {}
   return { ...row, extTags, extCategorizable: row.extCategorizable == null ? null : row.extCategorizable === 1 }
 }
 

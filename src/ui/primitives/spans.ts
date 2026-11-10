@@ -1,24 +1,19 @@
 import { truncate } from "../text"
 import { ink } from "../../theme"
 
-/** A run of text in one colour: titles, legends and other styled one-liners. */
 export interface Span {
   text: string
   fg: string
   bold?: boolean
-  /** Behind the text, where a span has its own (hatching); else the line's. */
   bg?: string
 }
 
 export const muted = (text: string): Span => ({ text, fg: ink.note })
 
-/** Total display width of `spans`. */
 export function spansWidth(spans: Span[]): number {
   return spans.reduce((n, span) => n + Bun.stringWidth(span.text), 0)
 }
 
-/** Cut `spans` to `budget` cells, ending the cut one with an ellipsis and
- * dropping the rest. */
 export function fitSpans(spans: Span[], budget: number): Span[] {
   const out: Span[] = []
   let left = budget
@@ -31,7 +26,6 @@ export function fitSpans(spans: Span[], budget: number): Span[] {
   return out
 }
 
-/** Clip spans and fill the remaining cells with muted spaces. */
 export function padSpans(spans: Span[], width: number): Span[] {
   const fitted = fitSpans(spans, width)
   const used = spansWidth(fitted)

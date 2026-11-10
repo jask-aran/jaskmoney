@@ -16,13 +16,9 @@ import { SEARCH_HELP, SEARCH_HELP_FULL, SEARCH_HELP_WIDTH, type HelpTone } from 
 
 const TONE: Record<HelpTone, string> = { get head() { return ink.heading }, get key() { return tone.key }, get text() { return ink.note }, get muted() { return ink.note } }
 
-/** F1 in the search bar: JQL, brief (the language in a sentence, an
- * example, the terms, precedence, gotchas) or full (m: what the rule
- * writer's model is given); scrolls when the screen is too short for it. */
 export function SearchHelp() {
   const dims = useTerminalDimensions()
   const lines = () => ((ui.state.searchHelp?.full ?? false) ? SEARCH_HELP_FULL : SEARCH_HELP)
-  // The modal's border and hint lines, and a line of air above and below.
   const visible = createMemo(() => Math.max(5, Math.min(lines().length, dims().height - 8)))
   createEffect(() => { if (ui.state.searchHelp && (ui.state.searchHelp?.visible ?? 0) !== visible()) ui.setState("searchHelp", { visible: visible() }) })
   const top = () => Math.min((ui.state.searchHelp?.top ?? 0), lines().length - visible())
@@ -49,12 +45,9 @@ export function TagPicker() {
   return <Show when={ui.state.tagPicker !== null}><OpenTagPicker /></Show>
 }
 
-/** The open picker: its rows (with counts over every row) are made only
- * while it shows. */
 function OpenTagPicker() {
   const items = createMemo(() => tagPickerItems(data.state.tags, data.state.categories, data.transactions(), ui.state.pickerTargets, ui.state.tagPicker?.query ?? ""))
   const mark = (value: string | number | null) => {
-    // The create row: a plus in the checkbox column.
     if (value === null) return " + "
     const id = Number(value)
     const patch = ui.state.tagPicker!.patch[id]
@@ -75,8 +68,6 @@ function OpenTagPicker() {
   )
 }
 
-/** n (Merchants) or N (a row): what you buy at a merchant, in words, shown
- * to Jev with its rows. Says why the merchant was flagged, when it was. */
 export function MerchantNoteBox() {
   return (
     <Show when={ui.state.merchantNote}>
@@ -100,14 +91,10 @@ export function MerchantNoteBox() {
   )
 }
 
-/** T: the tag to find transactions for: yours, groups found in the
- * history (trips, subscriptions), or a new name typed. */
 export function TagChooser() {
   return <Show when={(ui.state.tagChooser != null)}><OpenTagChooser /></Show>
 }
 
-/** The open chooser: its rows are worked out only while it shows (they
- * walk the whole history). */
 function OpenTagChooser() {
   const items = createMemo(() => tagChooserItems(tagChoices(data.state.tags, data.tagGroups(), (ui.state.tagChooser?.query ?? "")), data.transactions(), data.state.categories))
   return (
@@ -123,8 +110,6 @@ function OpenTagChooser() {
   )
 }
 
-/** ctrl+l in Transactions: the saved filters, most recently used first,
- * each with its expression. */
 export function SavedFilterPicker() {
   return (
     <Show when={ui.state.filterPicker}>
@@ -142,7 +127,6 @@ export function SavedFilterPicker() {
   )
 }
 
-/** Jump mode: the tab's targets, each behind its key as a badge (Go app). */
 export function JumpOverlay(props: { active: boolean; tab: TabId }) {
   return (
     <Show when={props.active}>

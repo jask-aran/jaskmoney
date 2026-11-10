@@ -2,13 +2,6 @@ import type { AssistantMessage, Context, Static, TSchema, Tool } from "@earendil
 import { piAi } from "./piAi"
 import type { Llm } from "./llm"
 
-/**
- * jaskmoney's agent loop, small on purpose: the model may call the tools it
- * is given (read-only views of the app's data), then must answer by calling
- * `finish`, whose arguments are the typed result. Nothing a tool does
- * changes data; whatever the result proposes, the app checks and the user
- * accepts.
- */
 interface AgentTool<P extends TSchema = TSchema> {
   name: string
   description: string
@@ -16,7 +9,6 @@ interface AgentTool<P extends TSchema = TSchema> {
   run: (args: Static<P>) => unknown | Promise<unknown>
 }
 
-/** A tool with its own argument type, as runAgent's list takes it. */
 export function agentTool<P extends TSchema>(tool: AgentTool<P>): AgentTool {
   return tool as unknown as AgentTool
 }
@@ -24,16 +16,13 @@ export function agentTool<P extends TSchema>(tool: AgentTool<P>): AgentTool {
 export interface AgentUsage { input: number; output: number; cost: number }
 
 interface AgentRun<T> {
-  /** The finish tool's arguments, or null (see `error`). */
   result: T | null
   error?: string
   turns: number
   usage: AgentUsage
-  /** Each tool call, in order, for logs and tests. */
   calls: { name: string; args: unknown }[]
 }
 
-/** A tool result longer than this is cut (the model is told). */
 const RESULT_CHARS = 24_000
 
 export async function runAgent<P extends TSchema>(
@@ -55,7 +44,6 @@ export async function runAgent<P extends TSchema>(
   const maxTurns = options.maxTurns ?? 8
   let nudged = false
   for (let turn = 1; turn <= maxTurns; turn++) {
-    // The last turn can only answer: a run always ends with a result.
     if (turn === maxTurns && maxTurns > 1) {
       context.tools = [finishTool]
       context.messages.push({ role: "user", content: "This is your last turn: answer now with `finish`, using what you have found.", timestamp: Date.now() })
@@ -69,7 +57,6 @@ export async function runAgent<P extends TSchema>(
     usage.output += reply.usage.output
     usage.cost += reply.usage.cost.total
     if (reply.stopReason === "error" || reply.stopReason === "aborted") {
-      // A provider's message can echo the request; never the key.
       const message = reply.errorMessage ?? reply.stopReason
       return { result: null, error: llm.apiKey ? message.replaceAll(llm.apiKey, "[redacted]") : message, turns: turn, usage, calls }
     }

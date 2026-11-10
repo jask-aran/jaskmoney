@@ -38,8 +38,6 @@ interface FilterResult {
   hints: string[]
 }
 
-// Approved deviations from legacy Go filter.go (2026-10-29): loose live
-// input, full save form, name resolution and the unambiguous strict readings.
 export function parseFilter(input: string, names?: FilterNames): FilterResult {
   return parseFilterWithMode(input, false, names)
 }
@@ -110,8 +108,6 @@ function resolveNames(node: FilterNode, names: FilterNames, hints: string[], amb
   }
   return node.children ? { ...node, children: node.children.map((child) => resolveNames(child, names, hints, ambiguities)) } : node
 }
-
-// ── Lexer ─────────────────────────────────────────────────────────────
 
 function lexFilter(input: string): Tok[] {
   const out: Tok[] = []
@@ -193,8 +189,6 @@ function lexFilter(input: string): Tok[] {
   return out
 }
 
-// ── Parser ────────────────────────────────────────────────────────────
-
 class Parser {
   idx = 0
   constructor(
@@ -209,7 +203,6 @@ class Parser {
     while (this.tokens.length > 1) {
       const tok = this.tokens[this.tokens.length - 2]!
       if (tok.kind !== "and" && tok.kind !== "or" && tok.kind !== "not") break
-      // A keyword glued to an unknown colon belongs to that text term.
       const before = this.tokens[this.tokens.length - 3]
       if (before?.kind === "colon" && before.pos + 1 === tok.pos) break
       this.tokens.splice(this.tokens.length - 2, 1)
@@ -243,7 +236,6 @@ class Parser {
       if (!this.strict) this.hints.push(message)
       this.ambiguities.push(message)
     }
-    // Keep a glued quoted token whole, including spaces inside its quotes.
     const glued = this.input.slice(this.peek().pos).match(/^(?:[^\s()"]|"(?:\\.|[^"\\])*")*/)?.[0] ?? ""
     const end = this.peek().pos + glued.length
     while (this.peek().kind !== "eof" && this.peek().pos < end) this.consume()
@@ -338,7 +330,7 @@ class Parser {
   parseField(): FilterNode {
     const fieldTok = this.consume()
     const field = fieldTok.text.toLowerCase().trim()
-    this.consume() // colon
+    this.consume()
     if (!isField(field)) throw new Error(`unknown field ${JSON.stringify(fieldTok.text)} at ${fieldTok.pos + 1}`)
 
     if (field === "amt") {
@@ -370,7 +362,6 @@ class Parser {
       const raw = this.collectValue(field, true)
       return { kind: "field", field, op: "=", value: raw.trim() }
     }
-    // desc, note, info, ask
     const raw = this.collectValue(field, true)
     return { kind: "field", field, op: "contains", value: raw.trim() }
   }
@@ -411,7 +402,6 @@ function canStartTerm(k: TokKind): boolean {
   return k === "lparen" || k === "word" || k === "quoted" || k === "not"
 }
 
-/** Every field the parser knows (each described in domain/filterLanguage). */
 const FILTER_FIELDS = ["desc", "cat", "tag", "acc", "amt", "type", "note", "info", "date", "ask", "top"] as const
 
 function isField(v: string): boolean {
@@ -420,7 +410,6 @@ function isField(v: string): boolean {
 
 function suggestField(word: string): string | undefined {
   const value = word.toLowerCase()
-  // HTTP is ordinary colon text, though its edit distance from top is two.
   if (value === "http") return undefined
   const prefixes = FILTER_FIELDS.filter((field) => value.length >= 2 && field.startsWith(value))
   if (prefixes.length === 1) return prefixes[0]
@@ -452,8 +441,6 @@ function flatten(children: FilterNode[], kind: "and" | "or"): FilterNode[] {
   return out
 }
 
-/** `top:` cuts the whole result, so it may only be ANDed with the rest at
- * the top level (not inside OR or NOT), once. */
 function validateTop(node: FilterNode | null): void {
   if (!node) return
   const isTop = (n: FilterNode) => n.kind === "field" && n.field === "top"

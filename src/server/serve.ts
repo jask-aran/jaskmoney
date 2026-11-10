@@ -1,13 +1,3 @@
-/**
- * The core to other clients (a TUI's --connect): the core's protocol
- * (core/protocol) as JSON over a WebSocket at /api. One process owns the
- * database; everything else connects here.
- *
- * It listens on this machine only, and /api answers only requests
- * addressed to it by a loopback name, and no browser page: a WebSocket
- * ignores CORS, and a DNS-rebound page could otherwise name its own host. There is no token: reaching it from
- * elsewhere (a tunnel) is the tunnel's business, and its own login.
- */
 import type { ServerWebSocket } from "bun"
 import type { Core } from "../core/core"
 import { KEYED_SLICES, type ClientMessage, type CoreState, type ServerMessage } from "../core/protocol"
@@ -18,17 +8,13 @@ const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"])
 const KEYED = new Set<string>(KEYED_SLICES)
 
 interface Connection {
-  /** Each whole slice as this client last got it (JSON). */
   sent: Map<string, string>
-  /** Each keyed slice's entries, and each transaction, as last sent (JSON). */
   entries: Map<string, Map<string, string>>
   rows: Map<string, string>
   order: string
   calls: Map<string | number, AbortController>
 }
 
-/** A patch serialised once for every client: whole slices, keyed slices by
- * entry, transactions by row. */
 interface Encoded {
   whole: Map<string, string>
   entries: Map<string, Map<string, string>>
@@ -60,14 +46,12 @@ function createEncoder() {
   }
 }
 
-/** The keys whose JSON changed since `before` was sent, and the keys gone. */
 function changed(before: Map<string, string> | undefined, now: Map<string, string>): { set: string[]; remove: string[] } {
   const set = [...now].filter(([key, json]) => before?.get(key) !== json).map(([key]) => key)
   const remove = before ? [...before.keys()].filter((key) => !now.has(key)) : []
   return { set, remove }
 }
 
-/** The state message that brings this client up to date, or null when it is. */
 function stateMessage(ws: ServerWebSocket<Connection>, encoded: Encoded): string | null {
   const patch: string[] = [], keyed: string[] = []
   for (const [key, json] of encoded.whole) {
@@ -79,7 +63,6 @@ function stateMessage(ws: ServerWebSocket<Connection>, encoded: Encoded): string
     const before = ws.data.entries.get(slice)
     const { set, remove } = changed(before, now)
     ws.data.entries.set(slice, now)
-    // The first time, even empty: the client then has the slice.
     if (set.length || remove.length || !before) keyed.push(`${JSON.stringify(slice)}:{"set":{${set.map((key) => `${JSON.stringify(key)}:${now.get(key)}`).join(",")}},"remove":${JSON.stringify(remove)}}`)
   }
   let rows = ""
@@ -108,7 +91,6 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
   const hosts = new Set([...LOOPBACK, hostname])
   const connections = new Set<ServerWebSocket<Connection>>()
   const encode = createEncoder()
-  // One subscription for every client: each patch is serialised once.
   const unsubscribe = core.subscribe((patch) => {
     if (!connections.size) return
     const encoded = encode(patch)
@@ -128,8 +110,6 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
     const abort = new AbortController()
     ws.data.calls.set(id, abort)
     const cx = { progress: (data: unknown) => send(ws, { t: "progress", id, data }), signal: abort.signal }
-    // The command's state patches go out (above) as it makes them, so they
-    // reach the client before its result.
     Promise.resolve()
       .then(() => commands[method]!(message.params ?? {}, cx))
       .then(
@@ -146,7 +126,6 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
       const url = new URL(req.url)
       if (!hosts.has(url.hostname)) return new Response("Misdirected", { status: 421 })
       if (url.pathname !== "/api") return new Response("Not found", { status: 404 })
-      // A browser page (any origin): no client of this core is one.
       if (req.headers.get("origin")) return new Response("Forbidden", { status: 403 })
       if (server.upgrade(req, { data: { sent: new Map(), entries: new Map(), rows: new Map(), order: "", calls: new Map() } })) return undefined
       return new Response("WebSocket only", { status: 426 })
@@ -175,7 +154,6 @@ export function serveCore(core: Core, { port = DEFAULT_PORT, hostname = "127.0.0
 
   const api = new URL("/api", server.url.href).href.replace(/^http/, "ws")
   return {
-    /** Where clients connect (`--connect`). */
     api,
     stop() {
       unsubscribe()

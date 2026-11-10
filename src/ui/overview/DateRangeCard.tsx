@@ -15,20 +15,8 @@ import { regionRef } from "../regions"
 import type { OverviewModel } from "./overviewModel"
 import { panePointer } from "./RangePane"
 
-/**
- * How the Date Range card's chips fit its width: the roomiest spacing that
- * fits, tightening before anything is cut. Named: full, with each family's
- * name (Lookback, Period) before its chips, the first to go. Full: a space
- * between chips and
- * " │ " between groups; tight: chips side by side (their own padding
- * separates them) and a bare "│"; short: tight with the long period labels
- * shortened. The dates on the right show with full labels only (the
- * roomiest spacing that leaves them room); labels aren't shortened for them.
- */
 interface ChipLayout { gap: string; separator: string; label: (period: PeriodId) => string; timeframe: boolean; groups: boolean }
 
-/** The chip families' names, before each family where there's room: the
- * code's own names for them (TimeframeState's family). */
 const GROUP_NAMES = { lookback: "Lookback", period: "Period" } as const
 
 const SHORT: Partial<Record<PeriodId, string>> = { cycle: "Bud", month: "Mth", year: "Yr" }
@@ -40,16 +28,13 @@ const TIERS = [
   { gap: "", separator: "│", label: (p: PeriodId) => SHORT[p] ?? PERIOD_LABEL[p] },
 ]
 
-/** The chips' width in a tier: each label padded by a space either side. */
 function chipsWidth(tier: Omit<ChipLayout, "timeframe" | "groups"> & { groups?: boolean }): number {
   const chips = [...LOOKBACKS, ...PERIODS.map(tier.label), "Custom"].reduce((n, label) => n + label.length + 2, 0)
   const gaps = (LOOKBACKS.length - 1 + PERIODS.length - 1) * tier.gap.length
-  // A name and a space before each family.
   const names = tier.groups ? GROUP_NAMES.lookback.length + 1 + GROUP_NAMES.period.length + 1 : 0
   return chips + gaps + 2 * tier.separator.length + names
 }
 
-/** `inner`: the card's content width; `timeframe`: the dates' width (with a 2-column gap). */
 function chipLayout(inner: number, timeframe: number): ChipLayout {
   const withDates = TIERS.slice(0, 3).find((tier) => chipsWidth(tier) + 2 + timeframe <= inner)
   if (withDates) return { groups: false, ...withDates, timeframe: true }
@@ -60,28 +45,18 @@ type DateInput = OverviewModel & { focused: () => SectionId }
 
 export function createDateChips(input: DateInput) {
   const { dims, bounds, cycleConfig, focused } = input
-  // The dates on the right, between the [ ] that step them, and how far
-  // the range is from the current period (with 0 to come back).
   const offsetText = createMemo(() => rangeOffsetLabel(ui.state.timeframe, appNow(), cycleConfig()))
   const timeframeWidth = () => bounds().label.length + 4 + (offsetText() ? offsetText().length + 11 : 0)
-  // The card leaves the Up logo its columns; border and padding take 4.
   const rangeCardWidth = () => Math.max(20, dims().width - UP_LOGO_WIDTH - 1)
   const chipsFit = createMemo(() => chipLayout(rangeCardWidth() - 4, timeframeWidth()))
   const showTimeframe = () => chipsFit().timeframe
   const dateFocused = () => focused() === "ov.range"
-  // Chips are padded labels on a pill (chipLook); the cursor shows only
-  // while the Date Range is focused.
   const chip = (label: string, idx: number, active: () => boolean) => {
-    // `active` is a function: For runs its callback once per chip, so a plain
-    // boolean would keep the first render's value.
     const look = () => chipLook({ active: active(), cursor: dateFocused() && ui.state.dashChipCursor === idx })
     return <S fg={look().fg} bg={look().bg} bold={look().bold}>{` ${label} `}</S>
   }
-  // The space between chips: none when the row is tight (an empty text
-  // would still take a column).
   const gap = () => <text wrapMode="none" fg={ink.label}>{chipsFit().gap}</text>
   const stepPointer = (delta: -1 | 1) => onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", () => stepOverviewRange(ui, delta, data))
-  /** A range chip as its own text: a click on it chooses it. */
   const chipText = (label: string, idx: number, active: () => boolean) => (
     <text wrapMode="none" fg={ink.label} onMouseDown={onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", () => {
       ui.applyJump("ov.range")
@@ -100,8 +75,6 @@ export function DateRangeCard(input: DateInput & ReturnType<typeof createDateChi
       <box ref={regionRef("ov.range", "overview")} width={rangeCardWidth()} height={3} flexShrink={0} onMouseDown={panePointer("ov.range")}>
       <SectionCard title="Date Range" titleSuffix={`· ${scope().label}`} titleSuffixColor={ink.label} focused={dateFocused()} height={3} width={rangeCardWidth()}>
         <box flexDirection="row" justifyContent="space-between" width="100%">
-          {/* Each chip its own text: a click lands on the chip OpenTUI drew
-              there, with no sums of label widths to keep in step. */}
           <box flexDirection="row" flexShrink={0}>
             <Show when={chipsFit().groups}><text wrapMode="none" fg={ink.heading}><b>{`${GROUP_NAMES.lookback} `}</b></text></Show>
             <For each={LOOKBACKS}>
@@ -115,8 +88,6 @@ export function DateRangeCard(input: DateInput & ReturnType<typeof createDateChi
             <text wrapMode="none" fg={ink.rule}>{chipsFit().separator}</text>
             {chipText("Custom", CUSTOM_CHIP, () => ui.state.timeframe.family === "custom")}
           </box>
-          {/* The dates, between the [ and ] that step them (a click on
-              one steps too), after how far back the period is. */}
           <Show when={showTimeframe()}>
             <box flexDirection="row" flexShrink={0}>
               <Show when={offsetText()}>

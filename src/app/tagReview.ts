@@ -4,11 +4,6 @@ import type { TagChoice } from "../state/tagChooser"
 import type { UiStore } from "../state/uiStore"
 import { count } from "../ui/text"
 
-/**
- * Start finding transactions for a chosen tag: in its categories, or for a
- * trip found for it, within the trip's dates whatever the category (and the
- * status says so).
- */
 export async function startTagReview(ui: UiStore, data: DataStore, choice: TagChoice): Promise<void> {
   let target: TagTarget
   if (choice.kind === "tag") {
@@ -34,7 +29,6 @@ export async function startTagReview(ui: UiStore, data: DataStore, choice: TagCh
   }
 }
 
-/** Tag the review's candidates among `ids`. */
 export async function runTagAccept(ui: UiStore, data: DataStore, ids: number[]): Promise<void> {
   const review = data.state.tagReview
   if (!review) return

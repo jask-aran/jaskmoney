@@ -24,9 +24,6 @@ export function loadBudgetHistory(db: Db): BudgetHistoryEntry[] {
   }))
 }
 
-/** A budget for `scope` from the cycle starting `from` (null: always) until
- * its next change, or none from then (`amount` null); then the budgets
- * table holds what's in force in the cycle starting `nowStart`. */
 export function recordBudget(db: Db, scope: BudgetScope, amount: number | null, from: string | null, nowStart: string): void {
   if (amount != null && (!Number.isFinite(amount) || amount < 0)) throw new Error("budget amount can't be negative")
   const target = scope.kind === "overall" ? null : scope.kind === "account" ? scope.accountId : scope.categoryId

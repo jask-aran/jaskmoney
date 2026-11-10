@@ -5,32 +5,21 @@ import { wrapText } from "../../state/textLayout"
 import type { IntegrationUse } from "../../state/integrationUses"
 import { StyledLine, type StyledSpan } from "./StyledLine"
 
-/**
- * The integration card's pieces, shared by the first-run setup (ui/welcome)
- * and Settings' dialogs for Up Bank, the models and Executor: text as
- * lines of spans, wrapped to a column; what an integration does
- * (`usesLines`); numbered steps; a `›` action row; a result note. A card
- * is what to do on the left, and on the right exactly what jaskmoney does
- * with what you're connecting.
- */
 export type CardLine = { spans: StyledSpan[]; row?: number }
 export const blank: CardLine = { spans: [] }
 export const say = (text: string, fg: string = ink.label, bold = false): CardLine => ({ spans: [{ text, fg, bold }] })
 export const wrapped = (text: string, width: number, fg: string = ink.label): CardLine[] =>
   wrapText(text, Math.max(10, width)).map((t) => ({ spans: [{ text: t, fg }] }))
 
-/** A label and its value, the value wrapped in a column beside it. */
 export function labelled(label: string, value: string, width: number, fg: string = ink.figure, labelWidth = 12): CardLine[] {
   return wrapText(value, Math.max(10, width - labelWidth)).map((t, i) => ({ spans: [{ text: (i === 0 ? label : "").padEnd(labelWidth), fg: ink.label }, { text: t, fg }] }))
 }
 
-/** Steps to follow, numbered in the key colour. */
 export function numbered(items: readonly (readonly [string, string])[], width: number): CardLine[] {
   return items.flatMap(([n, text]) =>
     wrapText(text, width - 4).map((t, i) => ({ spans: [{ text: i === 0 ? ` ${n}  ` : "    ", fg: tone.key, bold: true }, { text: t, fg: ink.figure }] })))
 }
 
-/** An action: `›` and bold at the cursor, on `bg` (the cursor's wash) there. */
 export function actionLine(props: { at: boolean; label: string; fg?: string; detail?: string; bg?: string; row?: number }): CardLine {
   const bg = props.at ? props.bg ?? theme.surface0 : undefined
   return {
@@ -43,18 +32,13 @@ export function actionLine(props: { at: boolean; label: string; fg?: string; det
   }
 }
 
-/** A result: ✓ when it worked, ✗ when it didn't, · for news. */
 export function noteLines(note: { text: string; ok: boolean | null }, width: number): CardLine[] {
   const fg = note.ok === true ? tone.good : note.ok === false ? tone.bad : ink.note
   return wrapText(note.text, width - 3).map((t, i) => ({ spans: [{ text: i === 0 ? (note.ok === true ? " ✓ " : note.ok === false ? " ✗ " : " · ") : "   ", fg, bold: true }, { text: t, fg }] }))
 }
 
-/** An integration's panel: what it's for, the promises, then what it does
- * (writes marked). Short labels ("Sees") sit in a column beside what they
- * say; long ones (an endpoint) take their own line, what it does beneath. */
 export function usesLines(use: IntegrationUse, width: number): CardLine[] {
   const out: CardLine[] = [say(use.title, ink.heading, true), ...wrapped(use.why, width, ink.note), blank]
-  // The promises first: on a short screen the list below them is what's cut.
   for (const p of use.promises) wrapText(p, width - 2).forEach((t, i) => out.push({ spans: [{ text: i === 0 ? "✓ " : "  ", fg: tone.good }, { text: t, fg: ink.label }] }))
   out.push(blank)
   const short = use.uses.every((u) => u.what.length <= 10)
@@ -70,9 +54,6 @@ export function usesLines(use: IntegrationUse, width: number): CardLine[] {
   return out
 }
 
-/** Lines drawn as a column `width` wide on `bg`; a line with a `row` takes
- * `click(row)`'s handler. By place, not by line: a column rebuilt (a caret
- * blinks, a spinner turns) keeps its rows, and an unchanged row is left alone. */
 export function CardColumn(props: { lines: CardLine[]; width: number; bg: string; click?: (row: number | undefined) => ((event: MouseEvent) => void) | undefined }) {
   return (
     <box width={props.width} flexDirection="column" flexShrink={0}>
@@ -85,8 +66,6 @@ export function CardColumn(props: { lines: CardLine[]; width: number; bg: string
   )
 }
 
-/** A card's two sides: what to do (`children`), then what it does (`panel`)
- * beside it behind a rule, or, when `beside` is false, under it. */
 export function CardSides(props: { beside: boolean; leftWidth: number; rightWidth: number; panel: CardLine[]; bg: string; children: JSX.Element }) {
   return (
     <box flexDirection={props.beside ? "row" : "column"} gap={props.beside ? 3 : 1} flexShrink={0}>

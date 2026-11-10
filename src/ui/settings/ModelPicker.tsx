@@ -4,8 +4,6 @@ import { modelItems } from "../../app/modelPicker"
 import { ui } from "../../state/uiStore"
 import { ListPicker } from "../primitives/ListPicker"
 
-/** Choosing the general model (app/modelPicker): the provider's models from
- * pi-ai's catalog, recommended and in use marked, each with its price and context. */
 export function ModelPicker() {
   return (
     <Show when={ui.state.modelPicker}>

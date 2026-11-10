@@ -6,7 +6,6 @@ import { data } from "./dataStore"
 import { assignProviderCategories, syncCategoryTree } from "../up/categories"
 import { testEnv } from "../testing/scoped"
 
-/** Up rows (a fake Up answering 204), Groceries in Up's tree, Fuel local. */
 function setup() {
   testEnv("JASKMONEY_UP_TOKEN", "test-pat")
   testEnv("JASKMONEY_JEV_TOKEN", "")
@@ -43,7 +42,6 @@ test("a rule is offered after the third time a description goes in one category,
   const [a, b, c, waiting] = ids.coles
   await data.categorizeTransactions([a!, b!], cat("Groceries"))
   expect(data.ruleOffersFor()).toEqual([])
-  // Spelling and case don't split a description.
   await data.categorizeTransactions([c!], cat("Groceries"))
   const [offer] = data.ruleOffersFor()
   expect(offer).toMatchObject({ description: "Coles", expr: 'desc:"Coles"', times: 3, categorised: 3, agreeing: 3, waiting: [waiting!, ids.express], others: ["Coles Express"] })
@@ -53,7 +51,6 @@ test("a rule is offered after the third time a description goes in one category,
   expect(source(waiting!)).toBe("provider")
   expect(data.state.savedFilters.find((f) => f.id === "desc-coles")).toEqual({ id: "desc-coles", name: "Coles", expr: 'desc:Coles' })
   expect(data.state.rules.at(-1)).toMatchObject({ name: "Coles → Groceries", savedFilterId: "desc-coles", setCategoryId: cat("Groceries"), enabled: true })
-  // Covered now: not offered again.
   expect(data.ruleOffersFor()).toEqual([])
 })
 
@@ -61,7 +58,6 @@ test("no offer when the filter finds rows elsewhere (Coles Express in Fuel), and
   const { ids, cat, path } = setup()
   await data.categorizeTransactions([ids.express], cat("Test fuel"))
   await data.categorizeTransactions(ids.coles.slice(0, 3), cat("Groceries"))
-  // desc:Coles finds Coles Express too: 3 of 4 categorised in Groceries.
   expect(data.ruleOffersFor()).toEqual([])
   await data.categorizeTransactions(ids.aldi, cat("Groceries"))
   const [aldi] = data.ruleOffersFor()

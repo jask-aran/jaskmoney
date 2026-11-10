@@ -3,14 +3,6 @@ import { data } from "./dataStore"
 import { syncTagLinks } from "../up/tags"
 import { testEnv } from "../testing/scoped"
 
-/**
- * Backlog 3, instant tags (acceptance, frozen): a tag change on an Up row
- * shows here at once, like a category; what Up hasn't confirmed waits in
- * `tag_pushes` (transaction_id, tag_id, action 'add' | 'remove'), which a
- * sync honours (Up's tags win except for waiting changes) and
- * retryPendingTags() sends after it. Up refusing puts the row back.
- */
-
 type Answer = "ok" | "refuse" | "offline" | Promise<void>
 let fetchMock: Mock<typeof fetch>
 let answers: Answer[] = []
@@ -26,7 +18,6 @@ async function setup() {
     VALUES ('2026-01-01', '2026-01-01', -4, 'Cafe', 'up', 'remote-1', '[]')`).run().lastInsertRowid)
   const csv = Number(db.query(`INSERT INTO transactions (date_raw, date_iso, amount, description, source)
     VALUES ('2026-01-01', '2026-01-01', -4, 'Cafe', 'csv')`).run().lastInsertRowid)
-  // Up knows the tag already, so a sync reconciles its links.
   db.query("UPDATE tags SET ext_id = 'COFFEE' WHERE id = ?").run(tag)
   data.refresh()
   return { db, tag, ignore, up, csv }
@@ -61,7 +52,6 @@ test("a sync before Up has the change keeps it: waiting adds stay on, waiting re
   data.refresh()
   expect(tagsOf(up)).toEqual([tag])
 
-  // Up has the tag; removing it while Up is offline keeps it off through a sync.
   answers = []
   await data.retryPendingTags()
   expect(extTags(up)).toEqual(["COFFEE"])

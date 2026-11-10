@@ -15,10 +15,6 @@ import { appToday } from "../domain/days"
 class BudgetCommands {
   constructor(private readonly ctx: CoreRuntime) {}
   budgetCommands = {
-    /** A budget from the cycle starting `from` (default this one) until its
-     * next change. One first set in this cycle is recorded since always, so
-     * it measures earlier cycles too. `replaces`: the budget this one was
-     * (the editor changed what it covers) ends then, in the same write. */
     setBudget: (p: { scope: BudgetScope; amount: number; from?: string; replaces?: BudgetScope }) => {
       const now = cycleFor(this.ctx.cycle(), appToday()).start
       const fresh = !this.ctx.state.budgetHistory.some((e) => scopeKey(e.scope) === scopeKey(p.scope))
@@ -27,7 +23,6 @@ class BudgetCommands {
         recordBudget(db, p.scope, p.amount, fresh && (p.from ?? now) === now ? null : p.from ?? now, now)
       })())
     },
-    /** No budget for `scope` from the cycle starting `from` (default this one). */
     removeBudget: (p: { scope: BudgetScope; from?: string }) => {
       const now = cycleFor(this.ctx.cycle(), appToday()).start
       this.ctx.mutate((db) => recordBudget(db, p.scope, null, p.from ?? now, now))
@@ -47,12 +42,9 @@ class TransactionsCommands {
   }
 }
 
-/** How a command hears about the call it serves. */
 export interface CallContext<P = never> {
   progress: (data: P) => void
   signal: AbortSignal
-  /** In-process links only (tests): a Jev client or general model in place
-   * of the real ones. */
   ai?: Pick<JevClient, "judge">
   llm?: Llm
   models?: Pick<Models, "login">
@@ -60,12 +52,6 @@ export interface CallContext<P = never> {
 
 export { CONFIG_SETTLE_MS, initialCoreState } from "./runtime"
 
-/**
- * The jaskmoney core: the one owner of the database, the settings file, the
- * credentials, Up and the models. Framework-free; clients (the TUI) see it through `CoreState` patches and call its `commands` over a
- * link (client/link: in-process; server/serve: a WebSocket). See
- * core/protocol for the contract.
- */
 export function createCore() {
   const ctx = new CoreRuntime()
   const transactions = new TransactionsCommands(ctx)
@@ -73,10 +59,6 @@ export function createCore() {
   const data: DataCommands = new DataCommands(ctx, () => commands)
   const sync = new SyncCommands(ctx)
   const budget = new BudgetCommands(ctx)
-  /**
-   * Everything a client can ask of the core. Each takes one params object
-   * (JSON over the wire) and, where it needs one, the call's context.
-   */
   const commands = {
     ...ctx.runtimeCommands,
     ...transactions.transactionsCommands,
@@ -100,7 +82,6 @@ export function createCore() {
     close: ctx.close,
     dispose: ctx.dispose,
     refresh: ctx.refresh,
-    /** Test seams (in-process only): write the state, reach the database. */
     set: ctx.set,
     get db() { return ctx.db },
   }

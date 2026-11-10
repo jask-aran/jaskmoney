@@ -7,13 +7,8 @@ import { blank, noteLines, numbered, say, usesLines, wrapped, type CardLine } fr
 import type { StyledSpan } from "../primitives/StyledLine"
 import { DEMOS } from "./Demos"
 
-/**
- * The setup's card (ui/welcome/Welcome): a step's left column, and the
- * right panel. Built inside the screen's memos, from its accessors.
- */
 type Line = CardLine
 
-/** What the card is built from: the screen's state and clock. */
 export interface CardInputs {
   state: () => WelcomeState
   ctx: () => WelcomeContext
@@ -22,9 +17,6 @@ export interface CardInputs {
   caretOn: () => boolean
 }
 
-// ---- A row of the step: a button.
-// The token as dots and a caret; empty, a caret and a faint hint, so it
-// doesn't read as text the paste goes into the middle of.
 function tokenField(c: CardInputs): { text: string; hint: string } {
   const { state, caretOn } = c
   const shown = tokenShown(state().token.value)
@@ -42,7 +34,6 @@ function rowLine(c: CardInputs, row: WelcomeRow, i: number): Line {
     spans: [
       { text: at ? " ›" : "  ", fg: tone.key, bold: true, bg },
       { text: row.done ? " ✓ " : "   ", fg: tone.good, bold: true, bg },
-      // An Up account: its dot, green when it syncs, grey when it won't.
       ...(row.account ? [{ text: `${label.match(/^ */)![0]}● `, fg: row.syncs ? tone.good : ink.faint, bg }] : []),
       { text: row.account ? label.trimStart() : label, fg: row.primary ? tone.key : row.account && !row.syncs ? ink.faint : at ? ink.strong : ink.figure, bold: at || row.primary, bg },
       ...(field?.hint ? [{ text: field.hint, fg: ink.faint, bg }] : []),
@@ -59,10 +50,8 @@ function note(c: CardInputs, width: number): Line[] {
 }
 const buttons = (c: CardInputs): Line[] => [blank, ...c.rows().flatMap((row, i) => row.gapBefore ? [blank, rowLine(c, row, i)] : [rowLine(c, row, i)])]
 
-// ---- A step's left column, and the right panel.
 export function leftLines(c: CardInputs, s: WelcomeState, w: number): Line[] {
   switch (s.step) {
-    // No heading: the title above says it, and the status line welcomes.
     case "hello": return [
       ...wrapped("Setup connects Up Bank, an AI model and your email. Every step is optional; Settings › Up Bank › Setup runs it again.", w),
       blank,
@@ -90,7 +79,6 @@ function upLines(c: CardInputs, s: WelcomeState, w: number): Line[] {
     blank,
     ...(connected ? [
       ...(accounts
-        // The accounts are the rows below: enter switches one.
         ? [say("Up answered. Choose the accounts to sync:", tone.good), ...wrapped("A saver is part of its spending account and comes with it. Settings › Up Bank changes this any time.", w, ink.note)]
         : [say("Connected.", tone.good), blank, ...wrapped(data.state.upSyncing ? "Syncing your transactions." : `${data.state.transactions.length} transactions so far.`, w, ink.note)]),
     ] : [
@@ -141,15 +129,12 @@ export function rightLines(c: CardInputs, s: WelcomeState, w: number): Line[] {
     const { rows } = c
     const at = rows()[s.cursor]?.action
     const lines = usesLines(AI_USES_TEXT[at === "openai" ? "openai" : at === "jevKey" ? "jev" : at === "clairic" ? "clairic" : "openrouter"], w)
-    // As tall as the tallest provider's: the card keeps its size as the cursor moves.
     const tallest = Math.max(...Object.values(AI_USES_TEXT).map((u) => usesLines(u, w).length))
     return [...lines, ...Array.from({ length: tallest - lines.length }, () => blank)]
   }
   return []
 }
 
-// ---- The tour's card: where you are among the demos, what this one
-// shows, the rows. The demo itself plays below the card.
 function tourCard(c: CardInputs): Line[] {
   const { state } = c
   const demo = DEMOS[state().demo]!
@@ -157,7 +142,6 @@ function tourCard(c: CardInputs): Line[] {
   say(`Tour · ${demo.name}`, ink.strong, true),
   blank,
   ...demo.caption.map(([k, text]): Line => ({ spans: [{ text: k.padEnd(4), fg: tone.key, bold: true }, { text: text, fg: ink.label }] })),
-  // Two lines each, so the card (and the demo under it) stays put.
   ...(demo.caption.length < 2 ? [blank] : []),
   blank,
   { spans: DEMOS.flatMap((d, i): StyledSpan[] => [

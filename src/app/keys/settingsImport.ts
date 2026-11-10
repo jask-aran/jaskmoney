@@ -155,16 +155,12 @@ function handleSettingsImportPreview(ui: UiStore, key: KeyEvent, data?: DataStor
       } catch (error) { opened.patch({ committing: false }); throw error }
       opened.close()
       ui.setStatus(summary)
-      // The new rows get suggestions in the background.
       if (data) settleData(ui, suggestNew(data), (n) => { if (n) ui.setStatus(summary + newSuggestionsNote(n)) })
     })())
     return
   }
 }
 
-/** Settings › Up Bank's rows: the token (enter opens its dialog), sync
- * (enter syncs now), the accounts (enter opens which ones sync) and the
- * first-run setup (enter runs it again). */
 export const UP_ROWS = ["token", "sync", "accounts", "setup"] as const
 
 function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -183,7 +179,6 @@ function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (name === "s" && data) { void runSync(ui, data, { manual: true }); return }
 }
 
-/** Database & Import › Import history: every import, newest first. */
 function handleImportHistory(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (key.name === "escape") { ui.setState({ importHistory: null }); return }
   const count = data?.state.imports.length ?? 0
@@ -191,8 +186,6 @@ function handleImportHistory(ui: UiStore, key: KeyEvent, data?: DataStore): void
   if (moved != null) ui.setState("importHistory", { top: moved })
 }
 
-/** The accounts dialog: one row per Up account; enter switches sync on at
- * once, and off on a second enter (it removes the account's rows). */
 function handleUpAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const dialog = ui.state.upAccounts
   if (!dialog) return
@@ -203,7 +196,6 @@ function handleUpAccounts(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   if (moved != null) { ui.setState("upAccounts", { cursor: moved }); return }
   const account = accounts[dialog.cursor]
   if ((name === "return" || name === "enter") && account && data) {
-    // Switching off deletes the account's transactions: enter twice.
     if (account.syncEnabled) { confirmTwice(ui, data, { kind: "desyncAccount", id: account.id, label: account.name, with: "enter" }); return }
     settleData(ui, (async () => { await data.setAccountSync(account.id, true); ui.setStatus(`Sync on for ${account.name} · s to sync now`) })())
     return

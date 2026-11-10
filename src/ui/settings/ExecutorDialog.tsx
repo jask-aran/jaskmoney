@@ -7,9 +7,6 @@ import { theme, ink } from "../../theme"
 import { CardColumn, CardSides, actionLine, blank, labelled, noteLines, usesLines, wrapped, type CardLine } from "../primitives/cardLines"
 import { Modal } from "../primitives/Modal"
 
-/** Settings › AI models › Sources › Executor: the sign-in to Executor Cloud,
- * what it reaches, and the step to take (app/executorSource); beside it,
- * what jaskmoney reads, as the setup's Email step shows it. */
 export function ExecutorDialog() {
   const dims = useTerminalDimensions()
   const width = () => Math.max(40, Math.min(dims().width - 4, 120))

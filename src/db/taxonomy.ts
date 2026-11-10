@@ -62,7 +62,7 @@ export function loadRules(db: Db): Rule[] {
     try {
       const parsed: unknown = JSON.parse(r.addTagIds)
       if (Array.isArray(parsed)) addTagIds = parsed.filter(Number.isInteger).map(Number)
-    } catch { /* corrupt legacy list is displayed as empty rather than crashing settings */ }
+    } catch {}
     return { ...r, addTagIds, enabled: r.enabled === 1 }
   })
 }
@@ -78,7 +78,6 @@ export function createCategory(db: Db, input: Pick<Category, "name" | "color"> &
     .run(name, input.color, nextOrder(db, "categories"), input.notSpending ? 1 : 0).lastInsertRowid)
 }
 
-/** `notSpending` is left unchanged when omitted. */
 export function updateCategory(db: Db, id: number, input: Pick<Category, "name" | "color"> & { notSpending?: boolean }): void {
   const name = input.name.trim()
   if (!name) throw new Error("category name is required")
@@ -86,7 +85,6 @@ export function updateCategory(db: Db, id: number, input: Pick<Category, "name" 
   else db.query(`UPDATE categories SET name = ?, color = ?, not_spending = ? WHERE id = ?`).run(name, input.color, input.notSpending ? 1 : 0, id)
 }
 
-/** Set whether this category is left out of overall and account budgets. */
 export function setCategoryBudgetIgnored(db: Db, id: number, ignored: boolean): void {
   db.query("UPDATE categories SET budget_ignored = ? WHERE id = ?").run(ignored ? 1 : 0, id)
 }
@@ -103,7 +101,6 @@ export function deleteCategory(db: Db, id: number): void {
 
 export type TagInput = Pick<Tag, "name" | "color"> & Partial<Pick<Tag, "categoryIds" | "about">>
 
-/** A new tag; no categories or about, anywhere. */
 export function createTag(db: Db, input: TagInput): number {
   const name = input.name.trim().toUpperCase()
   if (!name) throw new Error("tag name is required")
@@ -114,7 +111,6 @@ export function createTag(db: Db, input: TagInput): number {
   })()
 }
 
-/** Categories and about are left as they are when omitted. */
 export function updateTag(db: Db, id: number, input: TagInput): void {
   const name = input.name.trim().toUpperCase()
   if (!name) throw new Error("tag name is required")
@@ -156,12 +152,10 @@ export function deleteRule(db: Db, id: number): void {
   } catch (error) { db.exec("ROLLBACK"); throw error }
 }
 
-/** Load rule IDs in execution order, including ties. */
 function orderedRuleIds(db: Db): number[] {
   return (db.query(`SELECT id FROM rules_v2 ORDER BY sort_order, id`).all() as { id: number }[]).map((r) => r.id)
 }
 
-/** Assign consecutive positions within the caller's transaction. */
 function writeRuleOrder(db: Db, ids: number[]): void {
   const update = db.query(`UPDATE rules_v2 SET sort_order = ? WHERE id = ?`)
   ids.forEach((id, i) => update.run(i, id))

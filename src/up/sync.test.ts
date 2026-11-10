@@ -47,10 +47,8 @@ describe("Up sync", () => {
     expect(category("pay")).toEqual({ name: "Salary", source: "type" })
     expect(category("interest")).toEqual({ name: "Interest", source: "type" })
     expect(category("osko")).toEqual({ name: "Uncategorised", source: null })
-    // Rows under the Income group load as income.
     const loaded = loadTransactions(db)
     expect(loaded.filter((t) => t.income).map((t) => t.categoryName).sort()).toEqual(["Interest", "Salary", "Salary"])
-    // A category you chose stays through later syncs, and so does Salary.
     db.query("UPDATE transactions SET category_id = (SELECT id FROM categories WHERE name = 'Other income'), category_source = 'user' WHERE external_id = 'mine'").run()
     await syncUp(db, client(rows), { now })
     expect(category("mine")).toEqual({ name: "Other income", source: "user" })
@@ -130,7 +128,6 @@ describe("Up sync", () => {
   test("disabled account skips requests and preserves rows and flag while metadata and transfer links update", async () => {
     const db = testDb()
     await syncUp(db, client([txn("disabled-held", "HELD", undefined, "saver"), txn("disabled-settled", "SETTLED", undefined, "saver")]), { now })
-    // Retain rows deliberately to prove sync does not alter disabled account data.
     db.query("UPDATE accounts SET sync_enabled = 0 WHERE external_id = 'saver'").run()
     const before = db.query("SELECT * FROM transactions").all()
     const saver = db.query<{ id: number }, []>("SELECT id FROM accounts WHERE external_id = 'saver'").get()!
@@ -142,7 +139,6 @@ describe("Up sync", () => {
       if (url.pathname.endsWith("/categories")) return response([])
       if (url.pathname.endsWith("/accounts")) return response([account(), renamed])
       requests.push(url.pathname)
-      // Include both a new disabled side and an existing disabled side defensively.
       return response([txn("enabled"), txn("disabled-new", "HELD", undefined, "saver"), txn("disabled-held", "SETTLED", undefined, "saver")])
     } })
     expect(await syncUp(db, defensive, { now })).toMatchObject({ accounts: 2, inserted: 1, updated: 1, removedHeld: 0 })
@@ -151,7 +147,6 @@ describe("Up sync", () => {
     expect(db.query("SELECT name, external_kind, balance, sync_enabled FROM accounts WHERE id = ?").get(saver.id))
       .toEqual({ name: "Renamed savings", external_kind: "HOME_LOAN", balance: 987.65, sync_enabled: 0 })
     expect(loadTransactions(db)).toMatchObject([{ transferAccountId: saver.id, internal: false, excluded: false }])
-    // A counterpart omitted from the account response must still resolve locally.
     await syncUp(db, client([txn("enabled")], [account()]), { now })
     expect(db.query("SELECT transfer_account_id FROM transactions WHERE external_id = 'enabled'").get()).toEqual({ transfer_account_id: saver.id })
   })

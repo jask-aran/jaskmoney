@@ -13,30 +13,21 @@ import { accountStacks, type AccountStack } from "../../domain/accountTree"
 import { accountMark } from "../icons"
 import { truncate } from "../text"
 
-/** Cells between stacks: " │ ". */
 const GAP = 3
-/** Cells for the "‹ " and " ›" marks when stacks are cut off. */
 const MORE = 2
-/** Narrowest a stack is drawn. */
 const MIN_STACK = 32
 const NET = " · Net position"
 
-/** The pane's height, borders included: a header line per stack, then its
- * rows (the tallest stack sets it). */
 function accountsPaneHeight(stacks: AccountStack[]): number {
   return 3 + Math.max(0, ...stacks.map((stack) => stack.rows.length))
 }
 
 interface Cell { text: string; fg: string; bg?: string; bold?: boolean }
 
-/** The Transactions tab's accounts, above the table: a stack per bank with
- * its net position, then its spending accounts and savers. The selected row
- * is marked, and highlighted while the pane has focus. */
 export function AccountsPane(props: { focused: boolean; width: number }) {
   const stacks = createMemo(() => accountStacks(data.state.accounts))
   const money = (n: number | null) => (n != null ? formatMoney(n) : "—")
   const mark = (kind: Parameters<typeof accountMark>[0]) => (accountMark(kind) ? `${accountMark(kind)} ` : "")
-  // Every stack is as wide as the widest needs, so their figures line up.
   const width = createMemo(() => Math.min(props.width - 4, Math.max(MIN_STACK, ...stacks().flatMap((stack) => [
     Bun.stringWidth(mark("net") + stack.label + NET) + 2 + money(stack.net).length,
     ...stack.rows.map((row) => 2 + Bun.stringWidth(mark(row.kind) + row.label) + 2 + money(row.balance).length),
@@ -46,7 +37,6 @@ export function AccountsPane(props: { focused: boolean; width: number }) {
   const shown = () => stacks().slice(window().start, window().end)
   const lines = () => Array.from({ length: accountsPaneHeight(stacks()) - 2 }, (_, i) => i)
 
-  /** One line of a stack: text on the left, a figure flush right. */
   const line = (left: Cell[], right: Cell, bg: string): Cell[] => {
     const room = width() - right.text.length - 1
     let used = 0
@@ -68,8 +58,6 @@ export function AccountsPane(props: { focused: boolean; width: number }) {
     const row = stack.rows[index - 1]
     if (!row) return [{ text: " ".repeat(width()), fg: ink.figure }]
     const current = row.selection === data.state.accountSelection
-    // The chosen account: the cursor wash while the pane has focus (its
-    // bold name marks it otherwise).
     const look = rowAppearance(false, false, current && props.focused)
     return line([
       { text: " ", fg: ink.figure },
@@ -111,9 +99,6 @@ export function AccountsPane(props: { focused: boolean; width: number }) {
   )
 }
 
-/** Which stacks fit in `width` cells, keeping `selected` in view: as many
- * before it as fit, then as many after. Stacks are `GAP` apart; a cut-off
- * side takes `MORE` cells for its mark. */
 function stripWindow(widths: number[], selected: number, width: number): { start: number; end: number } {
   const span = (start: number, end: number) =>
     widths.slice(start, end).reduce((sum, w) => sum + w, 0) + GAP * (end - start - 1) +

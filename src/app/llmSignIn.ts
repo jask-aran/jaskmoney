@@ -4,22 +4,9 @@ import { LLM_PROVIDERS, type LlmProvider } from "../ai/llm"
 import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
 
-/**
- * Browser sign-in to the general model's provider (pi-ai's OAuth: OpenRouter
- * mints a key; OpenAI is Sign in with ChatGPT). The core runs pi-ai's login,
- * serves the callback on 127.0.0.1, and races it with a prompt to paste the
- * redirect URL (a browser on another machine, or one that can't reach the
- * callback). The client opens the browser, shows the URL and paste field in
- * the modal, and sends the paste to the core. esc cancels the core's login.
- * The core keeps the credential in its own oauth.json.
- */
 let controller: AbortController | null = null
 let sendPaste: ((value: string) => void) | null = null
 
-/** Whether `url` may go to the OS's opener: an https page, or http on
- * this machine (a sign-in's loopback). Anything else (a
- * file:, a custom scheme, text shaped like an option) a service could
- * have sent, so it isn't opened; it stays on screen. */
 export function safeToOpen(url: string): boolean {
   let parsed: URL
   try { parsed = new URL(url) } catch { return false }
@@ -27,7 +14,6 @@ export function safeToOpen(url: string): boolean {
   return parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)
 }
 
-/** Open `url` in the user's browser (on WSL, Windows'); failures are silent: the modal shows the URL. */
 export function openBrowser(url: string): void {
   if (!safeToOpen(url)) return
   const command = process.platform === "darwin" ? "open" : process.env.WSL_DISTRO_NAME ? "wslview" : "xdg-open"
@@ -35,10 +21,9 @@ export function openBrowser(url: string): void {
     const child = spawn(command, [url], { detached: true, stdio: "ignore" })
     child.on("error", () => {})
     child.unref()
-  } catch { /* the URL is on screen */ }
+  } catch {}
 }
 
-/** `open` and `models` are replaced in tests. */
 export async function startLlmSignIn(ui: UiStore, data: DataStore, provider: LlmProvider, open: (url: string) => void = openBrowser, models?: Pick<Models, "login">): Promise<{ text: string; ok: boolean } | undefined> {
   if (ui.state.llmSignIn) return
   const { label, signIn } = LLM_PROVIDERS[provider]
@@ -81,11 +66,9 @@ export async function startLlmSignIn(ui: UiStore, data: DataStore, provider: Llm
   }
 }
 
-/** enter in the paste field: hand pi-ai the code or redirect URL. */
 export function submitSignInPaste(ui: UiStore): void {
   const value = ui.state.llmSignIn?.paste?.value.trim()
   if (!value || !sendPaste) return
-  // The core reports "Checking…" only when it accepts the paste.
   sendPaste(value)
 }
 
@@ -93,7 +76,6 @@ export function cancelLlmSignIn(): void {
   controller?.abort()
 }
 
-/** Forget a provider's browser sign-in. */
 export async function signOutLlm(data: DataStore, provider: LlmProvider): Promise<void> {
   await data.signOutLlm(provider)
 }

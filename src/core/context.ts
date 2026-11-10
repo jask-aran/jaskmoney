@@ -6,40 +6,26 @@ import type { CoreState, Repeat } from "./protocol"
 
 export type { Repeat, TagPatch } from "./protocol"
 
-/** What an undo step reports: its summary, and for a tag review's dismissal,
- * the candidates it brought back (the client puts them back in its review). */
 export interface UndoResult {
   message: string
   restored?: { review: number; tag: string; candidates: TagCandidate[] }
 }
 
-/**
- * One open database, from the attach that opened it until the next (demo
- * mode on or off, a factory reset, open). Async work captures the session it
- * started on and checks it after each await (`isCurrent`, `ensureCurrent`), so
- * its writes never land on the database that replaced it. Its id is
- * CoreState.session, which tells clients to drop what they cached.
- */
 export interface Session {
   readonly id: number
   readonly db: Db
 }
 
-/** What the core's parts share. */
 export interface CoreContext {
   readonly state: CoreState
   set: (patch: Partial<CoreState>) => void
   mutate: <T>(write: (db: Db) => T) => T
-  /** `rows`: only these transactions changed (refresh). */
   mutateSession: <T>(session: Session, doing: string, write: (db: Db) => T, rows?: Iterable<number>) => T
-  /** Reload from the database; `rows`: only these transactions changed (core refresh). */
   refresh: (rows?: Iterable<number>) => void
   readonly db: Db | null
   readonly dbVersion: number
-  /** The session open now; throws when no database is open. */
   session: () => Session
   isCurrent: (session: Session) => boolean
-  /** Throws, naming what was `doing`, when `session` is no longer open. */
   ensureCurrent: (session: Session, doing: string) => void
   transactions: () => Transaction[]
   upClient: () => ReturnType<typeof createUpClient>

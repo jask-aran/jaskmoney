@@ -11,7 +11,6 @@ import type { AskResult, DataState } from "./store"
 import type { createHistoryRows } from "./derived"
 import type { createMirror } from "./mirror"
 
-/** Only the latest run can write results; stopping also invalidates it. */
 export function createLatestRun(): { start(): { signal: AbortSignal; isCurrent(): boolean }; stop(): void } {
   let active: AbortController | null = null
 
@@ -32,18 +31,13 @@ export function createLatestRun(): { start(): { signal: AbortSignal; isCurrent()
   }
 }
 
-/** Near misses show by themselves when they don't swamp the results: at
- * most as many as the matches, and a handful whatever the matches. */
 export function showNearMisses(matches: number, near: number): boolean {
   return near <= Math.max(matches, 5)
 }
 
 export function createAskState(state: DataState, nearMissesShown: () => boolean) {
-  /** Jev's probabilities for `ask:` terms this session: words (lower-cased)
-   * → row id → how likely the row matches. Each new batch bumps `askVersion`. */
   const askVerdicts = new Map<string, Map<number, number>>()
   const [askVersion, setAskVersion] = createSignal(0)
-  /** A row matches at MATCH_AT, or with near misses shown, at NEAR_AT. */
   const verdictAt = (at: number): AskVerdict<Transaction> => (words, t) => {
     const p = askVerdicts.get(words.toLowerCase())?.get(t.id)
     return p == null ? undefined : p >= at
@@ -51,8 +45,6 @@ export function createAskState(state: DataState, nearMissesShown: () => boolean)
   const askVerdict: AskVerdict<Transaction> = (words, t) => verdictAt(nearMissesShown() ? NEAR_AT : MATCH_AT)(words, t)
   const askRuns = createLatestRun()
 
-  // Map insertion order is recency. Active terms stay even if a filter
-  // has more than eight; leaving that filter restores the limit.
   function trimAskVerdicts() {
     const active = new Set(askTerms(state.filterExpr ? unwrap(state.filterExpr) : null).map((words) => words.toLowerCase()))
     for (const key of askVerdicts.keys()) {
@@ -68,9 +60,6 @@ export function createAskState(state: DataState, nearMissesShown: () => boolean)
     trimAskVerdicts()
   })))
 
-  /** How likely a row matches the filter's `ask:` terms: the lowest of its
-   * judged terms' probabilities (the one holding it back); undefined if none
-   * is judged. */
   function askScore(id: number): number | undefined {
     askVersion()
     let low: number | undefined
@@ -86,8 +75,6 @@ export function createAskState(state: DataState, nearMissesShown: () => boolean)
 
 export function createAskCounts(state: DataState, accountScoped: ReturnType<typeof createHistoryRows>["accountScoped"], inView: (t: Transaction) => boolean, ask: ReturnType<typeof createAskState>) {
   const { askVersion, verdictAt } = ask
-  /** With `ask:` terms: rows that match, and near misses (rows that pass
-   * only when near misses count). */
   const askCounts = createRoot(() => createMemo(() => {
     const expr = state.filterExpr ? unwrap(state.filterExpr) : null
     if (!askTerms(expr).length) return null
@@ -98,8 +85,6 @@ export function createAskCounts(state: DataState, accountScoped: ReturnType<type
     return { matches, near: loose - matches }
   }))
 
-  /** Whether near misses are in the table: as `n` last set it, else when
-   * they don't outnumber the matches (a few are always worth a look). */
   const nearMissesShown = createRoot(() => createMemo(() => {
     if (state.askLoose != null) return state.askLoose
     const c = askCounts()
@@ -111,14 +96,6 @@ export function createAskCounts(state: DataState, accountScoped: ReturnType<type
 
 export function createAskAction(state: DataState, setState: SetStoreFunction<DataState>, core: ReturnType<typeof createMirror>["core"], accountScoped: ReturnType<typeof createHistoryRows>["accountScoped"], inView: (t: Transaction) => boolean, ask: ReturnType<typeof createAskState>) {
   const { askRuns, askVerdicts, trimAskVerdicts, askVerdict, setAskVersion } = ask
-  /**
-   * Have Jev judge the rows the current filter's `ask:` terms are waiting
-   * on: those the rest of the filter leaves possible, not judged yet, from
-   * the last ASK_DEFAULT_DAYS unless the filter limits dates, at most
-   * ASK_LIMIT, newest first. Matches show as each batch lands. Returns what
-   * was judged (app/searchReport words it), or null when a newer run or a
-   * cleared filter took over.
-   */
   async function askAbout(ai?: Pick<JevClient, "judge">): Promise<AskResult | null> {
     const expr = state.filterExpr ? unwrap(state.filterExpr) : null
     const terms = askTerms(expr)
@@ -128,15 +105,12 @@ export function createAskAction(state: DataState, setState: SetStoreFunction<Dat
     const started = Date.now()
     const result: AskResult = { terms: [], failures: [], ms: 0, dated: hasDateTerm(expr) }
     try {
-      // One term at a time: each verdict narrows the rows the next must judge.
       for (const words of terms) {
         const key = words.toLowerCase()
         const known = askVerdicts.get(key) ?? new Map<number, number>()
         askVerdicts.delete(key)
         askVerdicts.set(key, known)
         trimAskVerdicts()
-        // Rows whose match turns on these words: not ruled out by the rest of
-        // the filter, nor matched without them (a covered category's rows).
         const others: AskVerdict<Transaction> = (w, t) => w.toLowerCase() === key ? undefined : askVerdict(w, t)
         const possible = accountScoped().filter((t) => inView(t) && undecided(expr, t, others))
         const { rows, skipped } = askCandidates(possible, appToday(), hasDateTerm(expr))

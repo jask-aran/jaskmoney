@@ -11,8 +11,6 @@ import { key } from "../testing/keys"
 import { testEnv } from "../testing/scoped"
 import { handleKey } from "./keys"
 
-/** Settings › AI models with a waiting row and a categorised one; Jev and
- * Clairic keys (never used: nothing may reach the network). */
 async function setup() {
   testEnv("JASKMONEY_JEV_TOKEN", "jev-key-for-test")
   testEnv("JASKMONEY_CF_TOKEN", "cf-key-for-test"); testEnv("JASKMONEY_CF_ACCOUNT_ID", "acct-for-test")
@@ -44,7 +42,6 @@ async function until<T>(get: () => T | null | undefined): Promise<T> {
 
 test("Search: Clairic switches off and on, saved as a setting", async () => {
   await setup()
-  // The cursor passes Search's four queries before its model actions.
   ui.setState({ aiUse: { use: "search", cursor: 4, note: null } })
   expect(useActions("search", aiContext(data)).map((a) => a.id)).toEqual(["clairic"])
   handleKey(ui, key("return"), data)
@@ -73,7 +70,6 @@ test("enter on a query opens it: its exact request is built by the real code, fo
 
   const search = await previewSent("search", data, { smartQuestion: "corner bar last month", clairic: true })
   expect(search.map((p) => p.query)).toEqual(["searchTerms", "searchCategories", "clairic", "ask"])
-  // The account holder's examples go with the category questions, as with suggestions.
   expect((search[0]!.body as { state: unknown }).state).toEqual({ search: "corner bar last month" })
   expect((search[1]!.body as { state: unknown }).state).toEqual({ search: "corner bar last month", categories_used_for: { "Test food": ["Bulk Barn"] } })
   expect(search[2]!.to).toBe("POST https://api.cloudflare.com/client/v4/accounts/<your account>/ai/run/@cf/cloudflare/clairic")

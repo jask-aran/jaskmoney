@@ -15,7 +15,6 @@ test("a new data folder is owner-only, and so are the database and its write-ahe
   expect(mode(path)).toBe(0o600)
   expect(mode(`${path}-wal`)).toBe(0o600)
   db.close()
-  // One left readable by an older version is tightened when opened.
   const old = join(dir, "old.db")
   writeFileSync(old, "")
   openDb(old).close()

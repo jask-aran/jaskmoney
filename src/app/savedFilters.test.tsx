@@ -127,7 +127,6 @@ test("saved-filter input keeps command letters and space literal; arrows move an
   expect(ui.state.filterPicker?.cursor).toBe(1)
   handleKey(ui, key("p", { ctrl: true }), data)
   expect(ui.state.filterPicker?.cursor).toBe(0)
-  // Every printable key types, j and k included (a search takes any letter).
   for (const name of ["h", "l", "j", "k", "g", "2"]) handleKey(ui, key(name), data)
   handleKey(ui, key("space"), data)
   expect(ui.state.filterPicker?.query).toBe("hljkg2 ")

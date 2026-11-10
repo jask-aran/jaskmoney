@@ -3,7 +3,6 @@ import { LOOKUP_RETRY_HOURS, matchOrders, readShipment, type Purchase } from "..
 import { lookUpPurchases, purchaseSources, purchasesNote } from "./purchases"
 import { data } from "../state/dataStore"
 
-// Invented rows and emails.
 const NOW = Date.parse("2026-10-30T00:00:00Z")
 const DAY = 86_400_000
 const p = (id: number, daysAgo: number, amount = -9.32, description = "Amazon", rawText: string | null = "AMAZON AU MARKETPLACE"): Purchase =>
@@ -54,10 +53,8 @@ test("a round after sync: one program for the due rows; found rows keep their it
   expect(byId.get(2)?.bought).toEqual([{ name: "Bean Keeper", quantity: 1, price: 48.49 }])
   expect(byId.get(3)?.bought).toBeUndefined()
   expect(data.purchaseLookups().get(3)).toMatchObject({ status: "waiting", checks: 1 })
-  // Straight away: nothing is due, so nothing is asked.
   expect(await lookUpPurchases(data)).toEqual({ looked: 0, found: 0, resuggested: 0, error: null })
   expect(programs).toHaveLength(1)
-  // Later the email for row 3 has come: only row 3 is looked up again.
   const late = Buffer.from("Order #\n250-2\n* Residue Cleaner\nQuantity: 1\n18.9 AUD\nTotal\n18.9 AUD").toString("base64url")
   Object.assign(purchaseSources, { now: () => NOW + LOOKUP_RETRY_HOURS * 3_600_000, run: async (code: string) => { programs.push(code); return { shipments: [{ at: "2026-10-30T02:00:00Z", mime: "text/plain", data: late }], ebay: [] } } })
   expect(await lookUpPurchases(data)).toMatchObject({ looked: 1, found: 1 })
@@ -113,7 +110,6 @@ test("a lookup found before prices were kept is redone with its own email; if th
   expect(await lookUpPurchases(data)).toMatchObject({ looked: 1, found: 0 })
   expect(data.state.transactions[0]?.bought).toEqual([{ name: "Residue Cleaner", quantity: 2, price: 9.45 }])
   expect(data.purchaseLookups().get(1)?.legacy).toBeUndefined()
-  // Saved again the old way, and the email's no longer there: its items stay.
   db.query("UPDATE purchase_lookups SET items = '[\"2× Residue Cleaner\"]' WHERE transaction_id = 1").run()
   data.refresh()
   Object.assign(purchaseSources, { run: async () => ({ shipments: [], ebay: [] }) })

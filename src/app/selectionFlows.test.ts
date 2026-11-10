@@ -4,16 +4,6 @@ import { ui } from "../state/uiStore"
 import { key } from "../testing/keys"
 import { handleKey } from "./keys"
 
-/**
- * The Transactions selection machine (legacy update_transactions.go:
- * ensureRangeSelectionValid, pruneSelections) and the detail dialog —
- * frozen: change the code, not these.
- *
- * Picked rows (space) stay through filtering and sorting, by id, and go
- * when their row no longer exists. A range (shift+move) is its two end ids:
- * it ends when either end isn't among the rows shown.
- */
-
 beforeEach(() => {
   data.init(":memory:")
   const db = data.getDb()!
@@ -37,7 +27,6 @@ test("a range whose end is filtered out is no range: actions fall back to the se
   handleKey(ui, key("j", { shift: true }), data)
   handleKey(ui, key("j", { shift: true }), data)
   expect(ui.targetIds(rows()).sort()).toEqual([1, 2, 3])
-  // Filter out the range's anchor (row 1).
   data.setFilterLive("desc:bravo or desc:charlie or desc:delta")
   data.commitFilter("desc:bravo or desc:charlie or desc:delta")
   ui.jumpManagerCursor(0, rows().length)

@@ -2,37 +2,16 @@ import { addDays, dayOfWeek, daysBetween, type WeekStart } from "./days"
 import { dailySpendSeries } from "./dashboard"
 import type { Transaction } from "./types"
 
-/**
- * Spending-tab aggregates. Callers pass the transactions to consider (already
- * limited to spending accounts); these functions apply the shared spending
- * rules: only outflows (amount < 0), never `excluded` rows (internal transfers
- * or a not-spending category), never rows tagged
- * IGNORE (case-insensitive). Amounts in results are positive dollars.
- */
-
 export interface CalendarDay {
   dateISO: string
   spent: number
-  /** 0 = no spending; 1–4 = quartile of the period's non-zero days (1 lowest). */
   level: 0 | 1 | 2 | 3 | 4
-  /** A day to come: charges expected on it (the Budgets tab's calendar:
-   * regular payments due). */
   expected?: number
-  /** Past the range (spendingCalendar's `through`): shown, not part of it
-   * (no spending, no level). */
   outside?: true
-  /** A word on the day, where its amount would go (the Budgets tab's
-   * calendar: payday). */
   mark?: string
 }
 
-/**
- * Calendar heatmap for [startISO, endISO]: whole weeks, configured weekday first, as
- * columns of seven days. Days outside the range are null (padding in the first
- * and last week). Weeks are oldest first.
- */
 export function spendingCalendar(transactions: Transaction[], startISO: string, endISO: string, weekStart: WeekStart = "monday", options: { through?: string } = {}): Array<Array<CalendarDay | null>> {
-  // The grid runs on to `through` (a day or two past the range, outside it).
   const shownEnd = options.through && options.through > endISO ? options.through : endISO
   const days = daysBetween(startISO, shownEnd) + 1
   const { dates, values } = dailySpendSeries(transactions, startISO, endISO)

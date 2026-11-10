@@ -10,7 +10,6 @@ import { data } from "../state/dataStore"
 import { ui } from "../state/uiStore"
 import { keyEvent as key } from "../app/keyEvent"
 
-/** Which text elements redraw for one key: `bun --conditions=browser src/bench/dirty.tsx <scenario>`. */
 const scenario = process.argv[2] ?? "txns"
 for (const name of ["JASKMONEY_UP_TOKEN", "JASKMONEY_JEV_TOKEN", "JASKMONEY_CF_TOKEN"]) process.env[name] = ""
 process.env.JASKMONEY_DB = ":memory:"

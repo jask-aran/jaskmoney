@@ -1,27 +1,15 @@
 import type { Transaction } from "./types"
 import { filterTerm } from "./filter"
 
-/**
- * The Transactions table summarised by merchant: the rows it is given (already
- * filtered and scoped), grouped by description (Up's cleaned merchant name).
- * Totals are signed, like the rows: spending is negative and a refund offsets
- * it.
- */
 export interface MerchantGroup {
   merchant: string
   count: number
-  /** Signed sum of the rows. */
   total: number
-  /** total / count. */
   average: number
-  /** Latest dateISO. */
   lastISO: string
-  /** The most common category among the rows (ties: the larger absolute
-   * total, then alphabetical). */
   categoryId: number | null
   categoryName: string
   categoryColor: string
-  /** The rows' ids, for actions on the whole merchant. */
   ids: number[]
 }
 
@@ -60,8 +48,6 @@ export function groupByMerchant(rows: Transaction[]): MerchantGroup[] {
   })
 }
 
-/** Order groups by `sort`; the default direction puts the biggest spend,
- * the most rows, A first, and the latest first. */
 export function sortMerchantGroups(groups: MerchantGroup[], sort: MerchantSort, reverse = false): MerchantGroup[] {
   const by: Record<MerchantSort, (a: MerchantGroup, b: MerchantGroup) => number> = {
     total: (a, b) => a.total - b.total,
@@ -73,7 +59,6 @@ export function sortMerchantGroups(groups: MerchantGroup[], sort: MerchantSort, 
   return reverse ? sorted.reverse() : sorted
 }
 
-/** The filter that narrows `current` to one merchant (the table's drill-in). */
 export function merchantFilter(current: string, merchant: string): string {
   const term = filterTerm("desc", merchant)
   return current.trim() ? `(${current.trim()}) AND ${term}` : term

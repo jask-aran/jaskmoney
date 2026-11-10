@@ -8,16 +8,6 @@ type LocalTransaction = { id: number; external_id: string | null; status: string
 type SyncClient = Pick<ReturnType<typeof createUpClient>, "listAccounts" | "listAccountTransactions" | "listCategories">
 type Batch = { accountId: string; local: LocalTransaction[]; since: string | undefined; transactions: Awaited<ReturnType<SyncClient["listAccountTransactions"]>> }
 
-/**
- * Fetch Up's accounts, categories and transactions, then save them in one
- * write. `keep`: local rows whose fetched copy is older than what's here
- * (Up confirmed a change for them while this fetched); they're left as they
- * are, and the next sync brings them up to date.
- */
-/** `off`: the accounts (Up's ids) chosen not to sync (the setup's account
- * choice): they're saved switched off, as Settings › Up Bank would leave
- * them, and their transactions never fetched. Every other account Up
- * lists is switched on. Without it, each account keeps its switch. */
 export async function syncUp(db: Db, client: SyncClient, { now = new Date(), keep, ensureCurrent, off }: { now?: Date; keep?: ReadonlySet<number>; ensureCurrent?: () => void; off?: ReadonlySet<string> } = {}) {
   try {
     const tree = await client.listCategories()
@@ -34,7 +24,6 @@ export async function syncUp(db: Db, client: SyncClient, { now = new Date(), kee
       const { inserted, updated: saved, insertedIds } = saveTransactions(db, batches, accountIds, disabled, keep)
       let updated = saved
       const removedHeld = removeHeld(db, batches, disabled)
-      // Rows outside the fetch window still follow Up's (stored) category.
       updated += assignProviderCategories(db)
       updated += assignTypeCategories(db)
       const tags = syncTagLinks(db)
@@ -51,8 +40,6 @@ export async function syncUp(db: Db, client: SyncClient, { now = new Date(), kee
   }
 }
 
-/** Each synced account's transactions: since 14 days before its newest
- * (or its oldest held row), or all of them while any row lacks its details. */
 async function fetchBatches(db: Db, client: SyncClient, accounts: UpAccount[], disabledAccounts: () => ReadonlySet<string>, ensureCurrent: (() => void) | undefined): Promise<Batch[]> {
   const batches: Batch[] = []
   for (const account of accounts) {
@@ -74,13 +61,10 @@ async function fetchBatches(db: Db, client: SyncClient, accounts: UpAccount[], d
   return batches
 }
 
-/** Save Up's accounts; the local id for each Up account id, previously
- * synced ones included. */
 function saveAccounts(db: Db, accounts: UpAccount[], off: ReadonlySet<string> | undefined, syncedAt: string): Map<string, number> {
   const accountIds = new Map<string, number>()
   for (const account of accounts) {
     const existing = db.query<{ id: number }, [string]>("SELECT id FROM accounts WHERE source = 'up' AND external_id = ?").get(account.id)
-    // Up's display name as-is; a clash with another account adds " (Up)".
     const name = resolveUpName(account.attributes.displayName,
       name => db.query<{ id: number }, [string]>("SELECT id FROM accounts WHERE name = ?").get(name)?.id,
       existing?.id)
@@ -97,13 +81,10 @@ function saveAccounts(db: Db, accounts: UpAccount[], off: ReadonlySet<string> | 
       accountIds.set(account.id, Number(result.lastInsertRowid))
     }
   }
-  // Include previously synced accounts if a transfer counterpart is absent from this response.
   for (const account of db.query<{ id: number; external_id: string }, []>("SELECT id, external_id FROM accounts WHERE source = 'up' AND external_id IS NOT NULL").all()) accountIds.set(account.external_id, account.id)
   return accountIds
 }
 
-/** Insert the fetched transactions, or update the ones already here (a
- * category you chose kept); `keep`'s rows are left as they are. */
 function saveTransactions(db: Db, batches: Batch[], accountIds: Map<string, number>, disabled: ReadonlySet<string>, keep: ReadonlySet<number> | undefined) {
   const columns = ["status", "amount", "description", "date_raw", "date_iso", "settled_at", "raw_text", "message", "account_id", "transfer_account_id", "ext_category", "ext_parent_category", "ext_tags", "ext_categorizable", "transaction_type", "card_method", "card_suffix", "foreign_amount", "round_up", "cashback", "category_id", "category_source"]
   const update = db.query(`UPDATE transactions SET ${columns.map(c => `${c} = ?`).join(", ")} WHERE id = ? AND NOT (${columns.map(c => `${c} IS ?`).join(" AND ")})`)
@@ -134,7 +115,6 @@ function saveTransactions(db: Db, batches: Batch[], accountIds: Map<string, numb
   return { inserted, updated, insertedIds }
 }
 
-/** A fetched transaction's column values (saveTransactions' columns). */
 function transactionValues(transaction: UpTransaction, accountId: number, accountIds: Map<string, number>, existing: { id: number; category_id: number | null; category_source: string | null } | null, providerCategories: Map<string, number>, categoryId: number) {
   const a = transaction.attributes, r = transaction.relationships
   const providerCategory = providerCategories.get(r.category.data?.id ?? "")
@@ -149,8 +129,6 @@ function transactionValues(transaction: UpTransaction, accountId: number, accoun
     a.roundUp ? a.roundUp.amount.valueInBaseUnits / 100 : null, a.cashback ? a.cashback.amount.valueInBaseUnits / 100 : null, assignedCategory, categorySource]
 }
 
-/** Delete the held rows in each fetch window that Up no longer returns (they
- * settled under a new id, or were cancelled); how many. */
 function removeHeld(db: Db, batches: Batch[], disabled: ReadonlySet<string>): number {
   let removedHeld = 0
   const remove = db.query("DELETE FROM transactions WHERE id = ? AND source = 'up' AND status = 'HELD'")
@@ -162,9 +140,6 @@ function removeHeld(db: Db, batches: Batch[], disabled: ReadonlySet<string>): nu
       if (row.status === "HELD" && (since === undefined || Date.parse(row.external_created_at ?? "") >= Date.parse(since)) &&
         (row.external_id === null || !returned.has(row.external_id))) removedHeld += remove.run(row.id).changes > 0 ? 1 : 0
     }
-    // After a full-history fetch, a row Up no longer returns can never get
-    // its details; mark it not categorisable so it stops forcing full
-    // fetches (and is never pushed to).
     if (since === undefined) {
       for (const row of local) {
         if (row.ext_categorizable === null && row.external_id !== null && !returned.has(row.external_id)) markMissing.run(row.id)

@@ -5,7 +5,6 @@ import { testEnv } from "../testing/scoped"
 import { data } from "./dataStore"
 import type { AskResult } from "../client/store"
 
-/** The one ask term's counts from a run. */
 const term = async (run: Promise<AskResult | null>) => (await run)!.terms[0]!
 
 function setup() {
@@ -29,7 +28,6 @@ function setup() {
   onTestFinished(() => { data.clearFilter(); data.init(":memory:") })
 }
 
-/** A fake Jev: coffee is anything with Coffee, Espresso or Cafe in it. Records what it was sent. */
 function fakeJev() {
   const sent: string[] = []
   const description = (q: JevQuestion) => (q.instructions as { transaction: { description: string } }).transaction.description
@@ -47,13 +45,11 @@ test("ask: shows nothing until judged, then the matches; sends only rows the res
   data.commitFilter("ask:coffee AND amt:<=-6")
   expect(shown()).toEqual([])
   const summary = await term(data.askAbout(ai))
-  // Old Cafe is outside the last 90 days and $5 fails the amount: neither sent.
   expect(sent.sort()).toEqual(["Alba Coffee", "Bunnings", "Espresso Bar"])
   expect(shown()).toEqual(["Alba Coffee", "Espresso Bar"])
   expect(summary).toMatchObject({ rows: 3, asked: 3, matched: 2 })
   expect(data.state.asking).toBeNull()
 
-  // Judged rows aren't sent again; NOT uses the same verdicts.
   sent.length = 0
   data.commitFilter("NOT ask:coffee AND amt:<=-6")
   expect(await term(data.askAbout(ai))).toMatchObject({ rows: 3, asked: 0, matched: 2 })

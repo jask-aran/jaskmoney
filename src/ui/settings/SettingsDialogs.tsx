@@ -22,8 +22,6 @@ import { categoryMark } from "../icons"
 import { Form } from "../primitives/Form"
 import { ListPicker } from "../primitives/ListPicker"
 
-/** Which Up accounts sync: name, kind, on or off. New accounts, savers
- * included, sync from the start. */
 export function UpAccountsDialog() {
   return (
     <Show when={ui.state.upAccounts}>
@@ -47,14 +45,10 @@ export function UpAccountsDialog() {
   )
 }
 
-/** What jaskmoney does with each row's integration (the setup's panels). */
 const ROW_USES: Record<NonNullable<UiState["aiDialog"]>["row"], IntegrationUse> = {
   up: UP_USES, jev: AI_USES_TEXT.jev, openrouter: AI_USES_TEXT.openrouter, openai: AI_USES_TEXT.openai, workersAi: AI_USES_TEXT.clairic,
 }
 
-/** A dialog laid out as the setup's card: as wide as there's room for (to
- * 120), what to do beside what the integration does from 100 columns,
- * else the left side alone. Widths inside the dialog's border and padding. */
 function useCardWidths() {
   const dims = useTerminalDimensions()
   const width = () => Math.max(40, Math.min(dims().width - 4, 120))
@@ -65,11 +59,6 @@ function useCardWidths() {
   return { width, beside, left, right }
 }
 
-/** One model's dialog (and Up Bank's token): how it's connected, the steps
- * to a token while there's none (Up), its actions; a field when typing a
- * key, account id or model; a browser sign-in in progress. Beside it, what
- * jaskmoney does with it, as the setup shows it. No part of a key is ever
- * shown: the core sends only where one comes from. */
 export function AiDialog() {
   return (
     <Show when={ui.state.aiDialog}>
@@ -84,7 +73,6 @@ export function AiDialog() {
         const connected = () => !!aiConnection(d().row, ctx())
         const top = (): CardLine[] => [
           ...aiStatus(d().row, ctx()).flatMap((line) => labelled(line.label, line.value, card.left(), line.label === "Connection" ? (connected() ? tone.good : ink.faint) : line.label === "Model" ? ink.figure : ink.label)),
-          // Up without a token: how to make one, as the setup says it.
           ...(d().row === "up" && !connected() && !signIn() ? [blank, ...numbered(UP_TOKEN_STEPS, card.left())] : []),
           blank,
         ]
@@ -130,8 +118,6 @@ export function AiDialog() {
   )
 }
 
-/** Database & Import › Import history: every CSV import, newest first, a
- * window of IMPORT_HISTORY_ROWS at a time. */
 export function ImportHistoryDialog() {
   const when = (iso: string) => { const d = new Date(iso.includes("T") ? iso : `${iso.replace(" ", "T")}Z`); return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" }) }
   const imports = () => data.state.imports
@@ -159,7 +145,6 @@ const PREVIEW_ROWS = 8
 export function ImportOverlay() {
   const stage = () => (ui.state.importWizard?.stage ?? "none")
   const previewRows = () => { const p = ui.state.importWizard!.preview; return p ? (ui.state.importWizard!.previewShowAll ? p.rows : p.rows.filter((row) => row.duplicate)) : [] }
-  // The preview shows PREVIEW_ROWS rows at a time around the cursor.
   const previewTop = () => centredTop(ui.state.importWizard!.previewCursor, previewRows().length, PREVIEW_ROWS)
   const previewWindow = () => previewRows().slice(previewTop(), previewTop() + PREVIEW_ROWS)
   const profile = () => ui.state.importWizard!.profileDraft
@@ -228,10 +213,7 @@ export function EditorOverlay() {
         const fields = () => editorFields(kind(), ui.state.settingsDraft, ctx())
         const cursor = () => Math.min(ui.state.settingsEditor!.field, fields().length - 1)
         const field = () => fields()[cursor()]!
-        // Sized to its content (border and padding: 4), and steady while
-        // moving between fields: every kind's hint line counts.
         const hints = () => fields().map((f) => EDITOR_HINTS[f.kind]).reduce((a, b) => (b.length > a.length ? b : a), "")
-        // Solid tracks only the expression/filter and evaluation data, not the name or caret.
         const note = createMemo(() => editorNote(kind(), ui.state.settingsDraft, ctx()))
         const width = () => 4 + editorWidth(fields(), note(), hints())
         return (
@@ -264,7 +246,6 @@ export function EditorOverlay() {
   )
 }
 
-/** The settings editor's hint line for the focused field's kind. */
 const EDITOR_HINTS: Record<FormField["kind"], string> = {
   text: "↑↓ field · enter save · esc cancel",
   choice: "↑↓ field · ←→ change · enter save · esc cancel",

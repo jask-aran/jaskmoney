@@ -1,14 +1,6 @@
 import { expect, test } from "bun:test"
 import { canonicalFilter, evalFilter, parseFilter, parseFilterStrict, reparseFilterInput, type FilterTxn } from "./filter"
 
-/**
- * info: (approved 2026-10-30, a term legacy Go filter.go doesn't have):
- * what's known about a row beyond its description — what its order emails
- * say it bought, the bank's message, and the bank's raw text — matched as
- * desc: and note: match. Bare words in rules stay description-only; in
- * the search bar see below.
- */
-
 const row = (over: Partial<FilterTxn> = {}): FilterTxn => ({
   description: "Amazon", categoryId: null, categoryName: "Uncategorised", accountName: "Spending",
   notes: "", amount: -69.99, dateISO: "2026-10-20", tagNames: [], ...over,
@@ -40,7 +32,6 @@ test("bare words in rules and desc: stay description-only", () => {
   expect(matches("amazon info:toothbrush", brush)).toBe(true)
   expect(matches("info:toothbrush OR info:blender", brush)).toBe(true)
   expect(matches("NOT info:toothbrush", brush)).toBe(false)
-  // Strict JQL, saved as written.
   expect(parseFilterStrict("info:toothbrush").error).toBeUndefined()
   expect(canonicalFilter('info:"brush heads"').text).toBe('info:"brush heads"')
 
@@ -48,13 +39,8 @@ test("bare words in rules and desc: stay description-only", () => {
   expect(searched("rent", row({ description: "Sam Lee", message: "Rent for October" }))).toBe(true)
   expect(searched("gift", row({ notes: "Gift for Sam" }))).toBe(true)
   expect(searched("marketplace", row({ rawText: "AMAZON AU MARKETPLACE, SYDNEY" }))).toBe(false)
-  // A field in the search: words go back to the description, as for category names.
   expect(searched("toothbrush amt:<0", brush)).toBe(false)
   expect(searched("amazon amt:<0", brush)).toBe(true)
 })
 
-/** The search bar (2026-10-30, approved): words alone, with no field in
- * the search, also find what a row bought, its message and your notes (as
- * they find category and tag names, from the Go app). The bank's raw text
- * stays under info: (it's full of city names). */
 const searched = (input: string, t: FilterTxn) => evalFilter(reparseFilterInput(input).expr, t)

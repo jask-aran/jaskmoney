@@ -32,15 +32,11 @@ describe("key router", () => {
     handleKey(ui, key("return"), data)
     expect((ui.state.detail?.id ?? null)).toBe(3)
     expect(ui.activeScope()).toBe("manager.detail")
-    // The detail row wins over the selection for pickers.
     expect(ui.targetIds(data.scopedTransactions())).toEqual([3])
-    // j browses to the next row without closing.
     handleKey(ui, key("j"), data)
     expect((ui.state.detail?.id ?? null)).toBe(2)
-    // Tab keys are swallowed while the modal is open.
     handleKey(ui, key("1"), data)
     expect(ui.state.activeTab).toBe("manager")
-    // n edits notes starting from the current value; printable keys are text.
     handleKey(ui, key("n"), data)
     expect(ui.activeScope()).toBe("manager.detail.notes")
     expect((ui.state.detail?.notes?.draft ?? "")).toBe("kept")
@@ -80,7 +76,6 @@ describe("key router", () => {
     data.refresh()
     ui.switchTab("settings")
     ui.activateSettings("up")
-    // Rows: token, sync, accounts.
     ui.setState({ upCursor: 2 })
     handleKey(ui, key("return"), data)
     expect(ui.state.upAccounts).toEqual({ cursor: 0 })
