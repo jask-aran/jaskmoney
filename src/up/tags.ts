@@ -1,7 +1,6 @@
 import type { Db } from "../db/client"
-import { addTagLink, canAddUpTag, decodeStoredTags, removeTagLink } from "../db/tagLinks"
+import { addTagLink, decodeStoredTags, removeTagLink } from "../db/tagLinks"
 import type { createUpClient } from "./client"
-import { PUSH_CONCURRENCY, pushTransactions } from "./push"
 
 const isIgnore = (name: string) => name.toUpperCase() === "IGNORE"
 
@@ -93,50 +92,4 @@ export async function sendQueuedTagChange(
       .run(transactionId, tagId, action, logId, transactionId, tagId)
   })()
   return true
-}
-
-export async function pushTagChange(
-  db: Db,
-  client: Pick<ReturnType<typeof createUpClient>, "addTransactionTags" | "removeTransactionTags">,
-  transactionIds: number[],
-  tagId: number,
-  add: boolean,
-): Promise<{ changed: number; pushed: number; failures: string[]; changedIds: number[]; pushedIds: number[] }> {
-  const tag = db.query<{ name: string; ext_id: string | null }, [number]>("SELECT name, ext_id FROM tags WHERE id = ?").get(tagId)
-  if (!tag) throw new Error("tag not found")
-  const providerId = tag.ext_id ?? tag.name
-  const localOnly = isIgnore(tag.name) || isIgnore(providerId)
-  const change = add ? addTagLink : removeTagLink
-  let local = 0
-  const changedIds: number[] = [], pushedIds: number[] = []
-  const result = await pushTransactions(transactionIds, id => {
-    const row = db.query<{ source: string; external_id: string | null; ext_tags: string }, [number]>(
-      "SELECT source, external_id, ext_tags FROM transactions WHERE id = ?").get(id)
-    if (!row) return null
-    if (localOnly || row.source !== "up" || row.external_id === null) {
-      const n = change(db, id, tagId)
-      local += n
-      if (n) changedIds.push(id)
-      return null
-    }
-    const externalId = row.external_id
-    return async () => {
-      const tags = new Set(decodeStoredTags(row.ext_tags))
-      if (add && !canAddUpTag(db, id, tagId)) throw new Error("Up allows at most 6 tags")
-      if (add) await client.addTransactionTags(externalId, [providerId])
-      else await client.removeTransactionTags(externalId, [providerId])
-      if (add) tags.add(providerId)
-      else tags.delete(providerId)
-      const count = db.transaction(() => {
-        const count = change(db, id, tagId)
-        db.query("UPDATE tags SET ext_id = ? WHERE id = ? AND ext_id IS NULL").run(tag.name, tagId)
-        db.query("UPDATE transactions SET ext_tags = ? WHERE id = ?").run(JSON.stringify([...tags]), id)
-        return count
-      })()
-      pushedIds.push(id)
-      if (count) changedIds.push(id)
-      return count
-    }
-  }, { concurrency: PUSH_CONCURRENCY })
-  return { ...result, changed: result.changed + local, changedIds, pushedIds }
 }

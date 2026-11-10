@@ -217,7 +217,7 @@ export function ImportOverlay() {
   </>
 }
 
-export function FactoryResetOverlay() { return <Show when={ui.state.factoryReset !== null}><Modal title="Factory-reset database" tone="error" hints="enter erase · esc cancel"><text fg={tone.bad}>Removes the SQLite database and its transaction, account, taxonomy, and rule data.</text><text fg={ink.note}>Saved filters and import profiles remain in OpenTUI config.</text><text fg={tone.bad}>Type RESET: <TextInput field={{ value: ui.state.factoryReset!.draft, caret: ui.state.factoryReset!.caret }} focused /></text></Modal></Show> }
+export function FactoryResetOverlay() { return <Show when={ui.state.factoryReset !== null}><Modal title="Factory-reset database" tone="error" hints="enter erase · esc cancel"><text fg={tone.bad}>Removes the SQLite database and its transaction, account, taxonomy, and rule data.</text><text fg={ink.note}>Saved filters and import profiles stay in settings.json.</text><text fg={tone.bad}>Type RESET: <TextInput field={{ value: ui.state.factoryReset!.draft, caret: ui.state.factoryReset!.caret }} focused /></text></Modal></Show> }
 
 export function EditorOverlay() {
   const ctx = () => ({ accounts: data.state.accounts, categories: data.state.categories, tags: data.state.tags, savedFilters: data.state.savedFilters, transactions: data.transactions() })

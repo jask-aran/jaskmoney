@@ -26,7 +26,7 @@ function handleSettingsFactoryReset(ui: UiStore, key: KeyEvent, data?: DataStore
     if (dialog.draft !== "RESET") { ui.setStatus("Type RESET exactly to erase this database", true); return }
     opened.patch({ busy: true })
     settleData(ui, (async () => {
-      try { await data?.factoryResetDatabase(); opened.close(); ui.setStatus("Database reset · OpenTUI settings retained") }
+      try { await data?.factoryResetDatabase(); opened.close(); ui.setStatus("Database reset · settings kept") }
       finally { opened.patch({ busy: false }) }
     })())
     return
@@ -248,7 +248,7 @@ function handleSettingsTaxonomy(ui: UiStore, key: KeyEvent, data?: DataStore): v
     ui.openSettingsEditor(list === "categories" ? "category" : "tag", item.id, { ...ui.state.settingsDraft, name: item.name, color: item.color, categoryIds: "categoryIds" in item ? [...item.categoryIds] : [], about: "about" in item ? item.about ?? "" : "", notSpending: "notSpending" in item ? item.notSpending : false })
     return
   }
-  if (name === "delete" && item) { confirmTwice(ui, data, { kind: list === "categories" ? "category" : "tag", id: item.id, label: item.name, with: "delete" }); return }
+  if ((name === "delete" || name === "backspace") && item) { confirmTwice(ui, data, { kind: list === "categories" ? "category" : "tag", id: item.id, label: item.name, with: "delete" }); return }
 }
 
 function handleSettingsRules(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -264,7 +264,7 @@ function handleSettingsRules(ui: UiStore, key: KeyEvent, data?: DataStore): void
   if (name === "a") { ui.openSettingsEditor("rule", null, { ...ui.state.settingsDraft, name: "", savedFilterId: data?.state.savedFilters[0]?.id ?? "", setCategoryId: null, addTagIds: [] }); return }
   if ((name === "return" || name === "enter") && rule) { ui.openSettingsEditor("rule", rule.id, { ...ui.state.settingsDraft, name: rule.name, savedFilterId: rule.savedFilterId, setCategoryId: rule.setCategoryId, addTagIds: rule.addTagIds }); return }
   if (name === "space" && rule) { settleData(ui, (async () => { await data?.toggleSettingsRule(rule.id, !rule.enabled) })()); return }
-  if (name === "delete" && rule) { confirmTwice(ui, data, { kind: "rule", id: rule.id, label: rule.name, with: "delete" }); return }
+  if ((name === "delete" || name === "backspace") && rule) { confirmTwice(ui, data, { kind: "rule", id: rule.id, label: rule.name, with: "delete" }); return }
 }
 
 function handleSettingsFilters(ui: UiStore, key: KeyEvent, data?: DataStore): void {
@@ -275,7 +275,7 @@ function handleSettingsFilters(ui: UiStore, key: KeyEvent, data?: DataStore): vo
   if (moved) { ui.setState(moved.first ? { settingsSection: "rules", focusedSection: "set.rules", ruleCursor: moved.cursor } : { filterCursor: moved.cursor }); return }
   if (name === "a") { const id = nextSavedFilterId(filters); ui.openSettingsEditor("filter", null, { ...ui.state.settingsDraft, id, name: "", expr: "" }); return }
   if ((name === "return" || name === "enter") && filter) { ui.openSettingsEditor("filter", filter.id, { ...ui.state.settingsDraft, id: filter.id, name: filter.name, expr: filter.expr }); return }
-  if (name === "delete" && filter) { confirmTwice(ui, data, { kind: "filter", id: filter.id, label: filter.name, with: "delete" }); return }
+  if ((name === "delete" || name === "backspace") && filter) { confirmTwice(ui, data, { kind: "filter", id: filter.id, label: filter.name, with: "delete" }); return }
 }
 
 /** Appearance input matrix: navigation changes only its cursor; enter changes
@@ -344,6 +344,7 @@ export const settingsScopes = {
       { key: "j/k", desc: "section" },
       { key: "h/l", desc: "column" },
       { key: "enter", desc: "activate" },
+      { key: "i", desc: "import", label: "Import a CSV" },
       { key: "v", desc: "jump" },
       { key: "1-4", desc: "tab" },
     ],

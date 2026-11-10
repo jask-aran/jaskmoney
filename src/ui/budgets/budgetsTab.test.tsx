@@ -5,7 +5,7 @@ import { BUDGET_VIEWS, ui } from "../../state/uiStore"
 import { renderApp } from "../../testing/app"
 import { handleKey } from "../../app/keys"
 import { key } from "../../testing/keys"
-import { saveBudget } from "../../db/client"
+import { recordBudget } from "../../db/client"
 import { budgetIn } from "../../domain/budget"
 import { RGBA } from "@opentui/core"
 import { tone } from "../../theme"
@@ -95,7 +95,7 @@ test("x leaves a category out of the budgets (the target no longer counts it), a
 test("Each cycle, a view of the budget pane: each cycle judged against the budget in force then", async () => {
   const { frame } = await budgetsTab()
   // $250 from September; $500 from this cycle.
-  saveBudget(data.getDb()!, { kind: "overall" }, 250, "2026-09-01")
+  recordBudget(data.getDb()!, { kind: "overall" }, 250, "2026-09-01", "2026-09-01")
   data.refresh()
   await data.setBudget({ kind: "overall" }, 500)
   eachCycle()

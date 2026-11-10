@@ -156,7 +156,7 @@ function overviewArrowKeys(ui: UiStore, key: KeyEvent, data?: DataStore): boolea
         return true
       }
     }
-    travel(ui, name, data)
+    travel(ui, name)
     return true
   }
   return false
@@ -333,7 +333,7 @@ export function handleOverviewRange(ui: UiStore, key: KeyEvent, data?: DataStore
   const clock = appNow()
   const cycle = data?.cycle()
   if (name === "up" || name === "down" || (name === "left" && ui.state.dashChipCursor === 0) || (name === "right" && ui.state.dashChipCursor === chipCount() - 1)) {
-    travel(ui, name, data)
+    travel(ui, name)
     return
   }
   if (name === "h" || name === "left") {

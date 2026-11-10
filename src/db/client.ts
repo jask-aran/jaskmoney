@@ -80,8 +80,8 @@ export {
   loadTagLog,
 } from "./activity"
 export {
-  loadBudgets, loadBudgetHistory, saveBudget,
-  deleteBudget, recordBudget, loadBudgetCycle,
+  loadBudgets, loadBudgetHistory,
+  recordBudget, loadBudgetCycle,
   saveBudgetCycle,
 } from "./budgets"
 

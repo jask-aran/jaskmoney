@@ -130,7 +130,7 @@ export class SettingsCommands {
 
     saveSavedFilter: (p: { filter: SavedFilter; originalId?: string }) => this.saveSavedFilter(p.filter, p.originalId),
     deleteSavedFilter: (p: { id: string }) => this.deleteSavedFilter(p.id),
-    recordFilterUsage: (p: { id: string }) => this.saveUiPrefs({ filterUsage: { ...this.ctx.state.uiPrefs.filterUsage, [p.id]: new Date().toISOString() } }),
+    recordFilterUsage: (p: { id: string }) => this.saveUiPrefs({ filterUsage: { ...this.ctx.state.uiPrefs.filterUsage, [p.id]: appNow().toISOString() } }),
     setIcons: (p: { on: boolean }) => { this.persistConfig({ icons: p.on }); this.ctx.set({ icons: p.on }) },
     setWelcomed: (p: { done: boolean }) => { this.persistConfig({ welcomed: p.done }); this.ctx.set({ welcomed: p.done }) },
     saveUiPrefs: (p: { patch: Partial<UiPrefs>; soon?: boolean }) => this.saveUiPrefs(p.patch, { soon: p.soon }),

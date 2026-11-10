@@ -235,7 +235,7 @@ const scopes: Record<ScopeId, ScopeEntry> = {
     list: true,
     handle: (ui, key, data) => {
       const { name } = key
-      if (name === "left" || name === "right" || name === "up" || name === "down") travel(ui, name, data)
+      if (name === "left" || name === "right" || name === "up" || name === "down") travel(ui, name)
       else if (name === "return" || name === "enter") openBarItem(ui, data, ui.state.focusedSection)
       else if (name === "escape") ui.setState({ focusedSection: ui.state.activeTab === "budgets" ? budgetsHome(ui.state) : TAB_DEFAULT_FOCUS[ui.state.activeTab] })
     },

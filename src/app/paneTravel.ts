@@ -1,4 +1,3 @@
-import type { DataStore } from "../state/dataStore"
 import type { UiStore } from "../state/uiStore"
 import { nearestRegion, type Direction } from "../state/spatial"
 import { regionRects } from "../ui/regions"
@@ -12,7 +11,7 @@ import { regionRects } from "../ui/regions"
  * Travel changes only focus. Tab activation retains switchTab's reset policy.
  * chipLook derives bar colours from current-tab and cursor independently.
  */
-export function travel(ui: UiStore, dir: Direction, _data?: DataStore): void {
+export function travel(ui: UiStore, dir: Direction): void {
   const regions = regionRects(ui.state.activeTab)
   const focus = ui.state.focusedSection
   const from = regions.find((region) => region.id === focus)

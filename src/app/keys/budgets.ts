@@ -65,7 +65,7 @@ function budgetKeys(ui: UiStore, key: KeyEvent, data: DataStore, pane = 0): bool
     return true
   }
   // ←/→ move between panes, as on the Overview; h/l step views.
-  if (name === "left" || name === "right") { travel(ui, name, data); return true }
+  if (name === "left" || name === "right") { travel(ui, name); return true }
   if (name === "h" || name === "l") {
     stepBudgetPane(ui, pane, name === "h" ? -1 : 1)
     return true
@@ -81,8 +81,8 @@ function handleBudgetChart(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
   if (name === "escape") { ui.setState({ focusedSection: budgetsHome(ui.state) }); return }
-  if (name === "j" || name === "down") { travel(ui, "down", data); return }
-  if (name === "k" || name === "up") { travel(ui, "up", data); return }
+  if (name === "j" || name === "down") { travel(ui, "down"); return }
+  if (name === "k" || name === "up") { travel(ui, "up"); return }
   budgetKeys(ui, key, data, Math.max(0, BUDGET_PANES.indexOf(ui.state.focusedSection)))
 }
 
@@ -131,8 +131,8 @@ function handleBudgetPlan(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const { name } = key
   if (!data) return
   if (budgetKeys(ui, key, data) || budgetPlanKeys(ui, key, data)) return
-  if (name === "j" || name === "down") { travel(ui, "down", data); return }
-  if (name === "k" || name === "up") travel(ui, "up", data)
+  if (name === "j" || name === "down") { travel(ui, "down"); return }
+  if (name === "k" || name === "up") travel(ui, "up")
 }
 
 /** The Budgets tab's Budgets pane: p sets your pay each payday (from your
@@ -154,7 +154,7 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
   const rows = setupRows(ui, data)
   const cursor = Math.min(ui.state.budgetCategoryCursor, Math.max(0, rows.length - 1))
   // Above the first row: the pane in that direction.
-  if ((name === "k" || name === "up") && cursor === 0) { travel(ui, "up", data); return }
+  if ((name === "k" || name === "up") && cursor === 0) { travel(ui, "up"); return }
   const moved = listMove(key, cursor, rows.length)
   if (moved != null) { ui.setState({ budgetCategoryCursor: moved }); return }
   const row = rows[cursor]

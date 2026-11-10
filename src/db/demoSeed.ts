@@ -1,6 +1,7 @@
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs"
-import { openDb, loadCategories, uncategorisedCategoryId, saveBudget, saveBudgetCycle } from "./client"
+import { openDb, loadCategories, uncategorisedCategoryId, recordBudget, saveBudgetCycle } from "./client"
 import { DEMO_CATEGORIES, type DemoData } from "../domain/demo"
+import { appToday } from "../domain/days"
 
 /** Evaluation categories for hidden rows; missing or corrupt files yield no truth. */
 export function readDemoTruth(path: string): Map<number, string> {
@@ -49,7 +50,7 @@ export function seedDemoDb(path: string, demo: DemoData): void {
         if (parentId === undefined) throw new Error(`Missing demo category parent: ${c.name}`)
         db.query("UPDATE categories SET parent_id = ? WHERE name = ?").run(parentId, c.name)
       }
-      saveBudget(db, { kind: "overall" }, demo.budget.monthly)
+      recordBudget(db, { kind: "overall" }, demo.budget.monthly, null, appToday())
       saveBudgetCycle(db, { unit: "month", anchor: "calendar", anchorDate: null })
       const accountIds = new Map<string, number>()
       const insertAccount = db.query(`INSERT INTO accounts (name, type, source, external_id, external_kind, balance, sync_enabled, sort_order)

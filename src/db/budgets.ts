@@ -24,35 +24,11 @@ export function loadBudgetHistory(db: Db): BudgetHistoryEntry[] {
   }))
 }
 
-/** Insert or replace the budget for a scope; returns its id. */
-export function saveBudget(db: Db, scope: BudgetScope, amount: number, from: string | null = null): number {
-  if (!Number.isFinite(amount) || amount < 0) throw new Error("budget amount must be a positive number")
-  const target = scope.kind === "overall" ? null : scope.kind === "account" ? scope.accountId : scope.categoryId
-  db.query(`INSERT INTO budget_history (scope_kind, target_id, amount, from_date) VALUES (?, ?, ?, ?)
-    ON CONFLICT DO UPDATE SET amount = excluded.amount`).run(scope.kind, target, amount, from)
-  const existing = db.query(`SELECT id FROM budgets WHERE scope_kind = ? AND COALESCE(target_id, 0) = COALESCE(?, 0)`).get(scope.kind, target) as { id: number } | null
-  if (existing) {
-    db.query(`UPDATE budgets SET amount = ? WHERE id = ?`).run(amount, existing.id)
-    return existing.id
-  }
-  const order = (db.query(`SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM budgets`).get() as { n: number }).n
-  return Number(db.query(`INSERT INTO budgets (scope_kind, target_id, amount, sort_order) VALUES (?, ?, ?, ?)`).run(scope.kind, target, amount, order).lastInsertRowid)
-}
-
-export function deleteBudget(db: Db, id: number, from?: string): void {
-  if (from !== undefined) {
-    db.query(`INSERT INTO budget_history (scope_kind, target_id, amount, from_date)
-      SELECT scope_kind, target_id, NULL, ? FROM budgets WHERE id = ?
-      ON CONFLICT DO UPDATE SET amount = excluded.amount`).run(from, id)
-  }
-  db.query(`DELETE FROM budgets WHERE id = ?`).run(id)
-}
-
 /** A budget for `scope` from the cycle starting `from` (null: always) until
  * its next change, or none from then (`amount` null); then the budgets
  * table holds what's in force in the cycle starting `nowStart`. */
 export function recordBudget(db: Db, scope: BudgetScope, amount: number | null, from: string | null, nowStart: string): void {
-  if (amount != null && (!Number.isFinite(amount) || amount < 0)) throw new Error("budget amount must be a positive number")
+  if (amount != null && (!Number.isFinite(amount) || amount < 0)) throw new Error("budget amount can't be negative")
   const target = scope.kind === "overall" ? null : scope.kind === "account" ? scope.accountId : scope.categoryId
   db.query(`INSERT INTO budget_history (scope_kind, target_id, amount, from_date) VALUES (?, ?, ?, ?)
     ON CONFLICT DO UPDATE SET amount = excluded.amount`).run(scope.kind, target, amount, from)

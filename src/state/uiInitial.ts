@@ -8,7 +8,7 @@ export function initialUiState(initialStatusAt: number): UiState {
     activeTab: "overview",
     focusedSection: "none",
     jump: null,
-    statusLog: [{ id: 0, at: initialStatusAt, text: "OpenTUI shell", level: "info" }],
+    statusLog: [{ id: 0, at: initialStatusAt, text: "Jaskmoney", level: "info" }],
     get status() { return latestStatus(this.statusLog).text },
     get statusErr() { return latestStatus(this.statusLog).level === "error" },
     managerCursor: 0,

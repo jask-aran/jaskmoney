@@ -100,7 +100,7 @@ export function startCore(remote: string | null, serving: string | null, bootstr
     return
   }
   if (process.env.JASKMONEY_NO_BOOTSTRAP === "1") {
-    ui.setStatus("OpenTUI shell · bootstrap off")
+    ui.setStatus("Bootstrap off")
     return
   }
   bootstrap()

@@ -41,7 +41,7 @@ function queueTagPush(db: Db, transactionId: number, tagId: number, action: "add
 }
 
 /** Count Up's tags with all waiting changes applied, then the proposed add. */
-export function canAddUpTag(db: Db, transactionId: number, tagId: number): boolean {
+function canAddUpTag(db: Db, transactionId: number, tagId: number): boolean {
   const row = db.query<{ ext_tags: string }, [number]>("SELECT ext_tags FROM transactions WHERE id = ?").get(transactionId)
   const tag = db.query<{ providerId: string }, [number]>("SELECT COALESCE(ext_id, name) AS providerId FROM tags WHERE id = ?").get(tagId)
   if (!row || !tag) return false
