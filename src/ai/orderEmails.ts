@@ -194,11 +194,6 @@ export function matchOrders(rows: Purchase[], shipments: Shipment[], ebay: EbayO
 export const marketplaceRows = <T extends Pick<Purchase, "description" | "rawText">>(rows: T[]) => rows.filter((t) => isAmazon(t) || isEbay(t))
 
 
-/**
- * When a row's lookup is due (purchase_lookups): never looked up; or found
- * nothing yet, RETRY_HOURS ago or more, and wasn't given up. A found or
- * given-up row is never looked up again (look again forgets it).
- */
 export const LOOKUP_RETRY_HOURS = 6
 /** Emails can come days after the charge (Amazon ships, then emails):
  * nothing found by this age, after one look at that age, is given up. */
@@ -208,6 +203,11 @@ interface LookupState { status: "found" | "waiting" | "none"; checks: number; ch
 
 const ageDays = (t: Purchase, nowMs: number) => (nowMs - (t.createdMs ?? Date.parse(`${t.dateISO}T12:00:00Z`))) / 86_400_000
 
+/**
+ * When a row's lookup is due (purchase_lookups): never looked up; or found
+ * nothing yet, LOOKUP_RETRY_HOURS ago or more, and wasn't given up. A found or
+ * given-up row is never looked up again (look again forgets it).
+ */
 export function dueForLookup<T extends Purchase>(rows: T[], lookups: ReadonlyMap<number, LookupState>, nowMs: number): T[] {
   return marketplaceRows(rows).filter((t) => {
     if (t.amount === 0) return false

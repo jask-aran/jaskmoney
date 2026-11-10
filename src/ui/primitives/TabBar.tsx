@@ -8,8 +8,6 @@ import { theme, ink, tone } from "../../theme"
 import { chipLook } from "./chip"
 import { S } from "./S"
 
-/** Matches Go headerBarStyle + activeTabStyle / inactiveTabStyle; the
- * current tab is an active chip (chipLook). */
 export function TabBar(props: { active: TabId; items: { id?: SectionId; text: string; fg?: string; onHover?: () => void }[]; reserveRight?: number }) {
   const items = () => props.items.filter((item) => item.text)
   return (

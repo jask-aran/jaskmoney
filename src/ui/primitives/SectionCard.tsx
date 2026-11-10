@@ -26,12 +26,6 @@ export function BorderText(props: { spans: Span[]; top: number; left: number; bg
  * from the text below rather than nearly level with it. */
 const TITLE_INSET = 2
 
-/**
- * Matches Go renderManagerSectionBox:
- * - default title = brand pink bold; border = surface1
- * - focused = lavender title + border
- * - active adds " *" suffix (Go isActive)
- */
 export function SectionCard(props: {
   title: string
   focused?: boolean

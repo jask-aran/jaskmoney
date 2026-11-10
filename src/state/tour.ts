@@ -245,10 +245,10 @@ export function waiting(world: DemoWorld): Waiting {
   }
 }
 
-/** Suggestions: the keys the script presses, [ms into the loop, key]. */
-/** Y first (every sure one), a y, the order's detail opened and closed,
- * then a quick run of accepts, dismissals and moves. */
 const SUGGEST_LOOP = 10500
+/** Suggestions: the keys the script presses, [ms into the loop, key]:
+ * Y first (every sure one), a y, the order's detail opened and closed,
+ * then a quick run of accepts, dismissals and moves. */
 const SUGGEST_KEYS: Array<[number, TryKey]> = [
   [1100, key("y", "Y", true)], [2300, key("y")], [2900, key("return", "\r")], [5000, key("escape", "\x1b")],
   [5500, key("y")], [5850, key("x")], [6200, key("j")], [6500, key("y")], [6800, key("y")], [7100, key("x")], [7400, key("j")], [7700, key("y")], [8000, key("y")],
@@ -272,9 +272,8 @@ export function suggestAt(ms: number, world: DemoWorld): { state: DemoTry; press
   return { state, pressed }
 }
 
-/** Charts: the Overview's views (CHART_VIEWS), in turn, each long enough
- * to draw in and be looked at. */
-// 3.6 s: 0.9 to draw in (TOUR_CHART_MS), the rest to be looked at; at 2.2
+// Charts: the Overview's views (CHART_VIEWS), in turn, each long enough
+// to draw in and be looked at. 3.6 s: 0.9 to draw in (TOUR_CHART_MS), the rest to be looked at; at 2.2
 // it moved on too soon (2026-11-01 first-run test).
 const CHART_VIEW_MS = 3600
 

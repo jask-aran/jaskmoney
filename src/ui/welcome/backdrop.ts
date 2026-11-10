@@ -22,7 +22,7 @@ export interface BackdropInk { level: (level: number) => string; up: string; dow
  * come. `t` is seconds since this backdrop began (a tape streams in from
  * empty).
  *
- * It's drawn 30 times a second, so it's built for that: a backdrop fills a
+ * It's drawn 25 times a second, so it's built for that: a backdrop fills a
  * row of characters and colours at a time (no object per cell), `ink.level`
  * should be a lookup (the caller mixes its handful of colours once), and a
  * tape's text is made once per set of prices (tapeOf), not per cell.
@@ -196,7 +196,7 @@ function tickerTape(width: number, _height: number, t: number, ink: BackdropInk,
     if (y % 4 !== 1) return false
     const k = (y - 1) / 4
     const kind = kinds[k % kinds.length]!
-    // 2 to 11 columns a second: under half a column a frame at 30.
+    // 2 to 11 columns a second: under half a column a frame at 25.
     const speed = 2 + ((k * 0.618034) % 1) * 9
     // How far the tape has come in from the right edge: after its lead-in
     // (each tape's a little different, so they don't arrive together) it

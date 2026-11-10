@@ -105,7 +105,7 @@ export async function jevTagCandidates(
   })
 }
 
-/** What a detected group is, for Jev: "A trip: 38 in person, 12 more in SGD
+/** What a detected group is, for Jev: "A trip away: 38 in person, 12 more in SGD
  * · 22–25 May 2026 (Singapore)". */
 function groupAbout(group?: TagGroup): string | undefined {
   if (!group) return undefined

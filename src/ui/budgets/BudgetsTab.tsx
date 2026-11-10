@@ -92,15 +92,6 @@ const CYCLE_PANE_MIN = 12
 /** A click on a card or pane focuses it. */
 export const panePointer = (id: SectionId) => onPointer((scope) => scope === "bar" || scope.startsWith("budgets"), () => ui.applyJump(id))
 
-/**
- * The Budgets tab: how a budget is going, at a glance. A chart of the
- * budget at the cursor (this cycle against its pace and last cycle, or
- * cycle by cycle; h/l), under a line saying where it stands; the budgets
- * as bars against an even pace; and every category with its spending, its
- * budget, or that it's left out of the overall budget (x). Enter sets a
- * budget (a category's from its average: allocating down; the overall from
- * the category budgets' total: building up); c the cycle.
- */
 export function BudgetsTab(props: { focused: SectionId }) {
   const { budgets, config, through, transactions, cycle, today, label, ALL, dims, view, seen, pace, elapsed, period } = createBudgetInputs()
   const { setup, categoryCursor, split, firstData, progress, ignored, totalProgress, lines } = createBudgetProgress({ budgets, config, through, transactions, cycle, today })

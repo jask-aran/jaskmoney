@@ -264,15 +264,6 @@ function OverviewBody(input: OverviewBodyInput) {
   </Show>
 }
 
-/**
- * The overview: the Date Range (opens on the current budget cycle), two chart
- * panes cycling through spending, cash flow, balance and calendar views (h/l
- * the top or focused pane, H/L the bottom), and a column of stacks: Accounts
- * (balances now, with no range) and the Range pane (the range against the
- * same days of the previous period, as bars or text, and its categories). Spending figures cover the selected spending account
- * (see spendingScope); internal transfers and not-spending categories are
- * excluded.
- */
 export function OverviewTab(props: { focused: SectionId }) {
   const rangeModel = createOverviewRange()
   const tables = createOverviewTables(rangeModel)

@@ -8,7 +8,7 @@ import { fitSpans, spansWidth, type Span } from "./spans"
 const TONE = { get accent() { return tone.key }, get error() { return tone.bad }, get warning() { return tone.caution }, get focus() { return tone.focus } }
 
 /**
- * The app's one overlay, after the Go app's modals: a centred, bordered panel
+ * The app's one overlay: a centred, bordered panel
  * over the tab with its title centred in the top border (bold, with an
  * optional muted subtitle), the body, then a muted hint line. `tone` colours
  * the border and title: "error" for confirmations that destroy data.
