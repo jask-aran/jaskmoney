@@ -65,8 +65,8 @@ export function credentialEnv(env: Record<string, string | undefined> = process.
 }
 
 /** Where a key comes from, if anywhere. */
-export function credentialSource(name: CredentialName, env: Record<string, string | undefined> = process.env): "saved" | "env" | null {
-  if (loadSavedCredentials()[name]) return "saved"
+export function credentialSource(name: CredentialName, env: Record<string, string | undefined> = process.env, saved = loadSavedCredentials()): "saved" | "env" | null {
+  if (saved[name]) return "saved"
   return env[name]?.trim() ? "env" : null
 }
 

@@ -88,7 +88,7 @@ export async function connectExecutor(): Promise<McpClient> {
 /** What Executor reaches for you: its tools, by name. */
 export interface ExecutorStatus { signedIn: boolean; tools: string[]; error: string | null }
 
-type Connect<K extends keyof McpClient> = () => Promise<Pick<McpClient, K | "close">>
+export type Connect<K extends keyof McpClient> = () => Promise<Pick<McpClient, K | "close">>
 
 export async function executorStatus(connect: Connect<"listTools"> = connectExecutor): Promise<ExecutorStatus> {
   if (!executorSignedIn()) return { signedIn: false, tools: [], error: null }
@@ -100,7 +100,7 @@ export async function executorStatus(connect: Connect<"listTools"> = connectExec
   }
 }
 
-const textOf = (result: CallToolResult) => (result.content ?? []).flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
+export const textOf = (result: CallToolResult) => (result.content ?? []).flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
 
 /** Run a program through Executor's `execute` tool: its result, parsed when it's JSON. */
 export async function runExecutor(code: string, connect: Connect<"callTool"> = connectExecutor): Promise<unknown> {

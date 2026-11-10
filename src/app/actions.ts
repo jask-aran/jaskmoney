@@ -4,6 +4,7 @@ import { themeName } from "../state/appearanceRows"
 import { BACKDROPS, DEFAULT_BACKDROP } from "../ui/welcome/backdrop"
 import { CHART_LABEL_LABELS, DEFAULT_CHART_LABELS, chartCurveName, nextChartCurve, nextChartMotion, nextChartSpeed } from "../ui/charts/motion"
 import { runAsk } from "./ask"
+import { DEMO_YEARS } from "../domain/demo"
 import { llmModelId } from "../ai/llm"
 import type { AccountSelection, AccountRow } from "../domain/accountTree"
 import type { SavedFilter } from "../domain/types"
@@ -61,7 +62,7 @@ export function toggleWeekStart(ui: UiStore, data: DataStore): void {
 export function toggleDemo(ui: UiStore, data: DataStore): Promise<void> {
   const done = (async () => {
     if (data.state.demo) { await data.leaveDemo(); ui.setStatus("Demo mode off · your data") }
-    else ui.setStatus(`Demo mode: ${(await data.enterDemo()).toLocaleString("en-AU")} made-up transactions over 3 years · your data is untouched · sync is off`)
+    else ui.setStatus(`Demo mode: ${(await data.enterDemo()).toLocaleString("en-AU")} made-up transactions over ${DEMO_YEARS} years · your data is untouched · sync is off`)
     resetTransactionCursors(ui, data)
     ui.setState({ selectedIds: {}, range: null, detail: null })
   })()

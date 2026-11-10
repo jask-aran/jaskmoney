@@ -1,7 +1,5 @@
 import type { McpClient } from "@earendil-works/pi-mcp"
-import { connectExecutor } from "./executor"
-
-type Connect<K extends keyof McpClient> = () => Promise<Pick<McpClient, K | "close">>
+import { connectExecutor, textOf, type Connect } from "./executor"
 
 interface MailApp { id: string; slug: string; name: string; requirement: string }
 export interface MailAccount { label: string; email: string | null; ready: boolean }
@@ -54,7 +52,7 @@ function failure(value: unknown): Error {
 /** Unwrap both call envelopes; a pause needs the user's action, not a retry. */
 async function callApp(client: Pick<McpClient, "callTool">, path: string, input: Record<string, unknown>): Promise<unknown> {
   const result = await client.callTool("call", { calls: { path, input } })
-  const text = (result.content ?? []).flatMap((part) => part.type === "text" ? [part.text] : []).join("")
+  const text = textOf(result)
   let parsed: unknown
   try { parsed = JSON.parse(text) } catch {
     throw new Error(result.isError && text ? text : "Executor gave an invalid call response")

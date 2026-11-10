@@ -8,6 +8,17 @@
 
 export const SCHEMA_VERSION = 35
 
+export const RULES_V2_TABLE = `CREATE TABLE IF NOT EXISTS rules_v2 (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  name            TEXT NOT NULL,
+  saved_filter_id TEXT NOT NULL,
+  set_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+  add_tag_ids     TEXT NOT NULL DEFAULT '[]',
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);`
+
 /** Columns shared by the fresh schema and the v9 migration. Rows imported from
  * CSV keep source = 'csv' and NULL external fields. */
 export const ACCOUNT_SYNC_COLUMNS_LIST = [
@@ -369,16 +380,7 @@ CREATE TABLE IF NOT EXISTS transaction_tags (
   PRIMARY KEY (transaction_id, tag_id)
 );
 
-CREATE TABLE IF NOT EXISTS rules_v2 (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  name            TEXT NOT NULL,
-  saved_filter_id TEXT NOT NULL,
-  set_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-  add_tag_ids     TEXT NOT NULL DEFAULT '[]',
-  sort_order      INTEGER NOT NULL DEFAULT 0,
-  enabled         INTEGER NOT NULL DEFAULT 1,
-  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
-);
+${RULES_V2_TABLE}
 
 CREATE TABLE IF NOT EXISTS accounts (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,

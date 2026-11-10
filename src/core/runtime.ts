@@ -17,7 +17,7 @@ import { createRuleOffers } from "./ruleOffers"
 import type { CoreContext, Session, UndoResult } from "./context"
 import { type CoreState, type Repeat, emptyCoreState } from "./protocol"
 import { SettingsCommands } from "./settingsCommands"
-import { CREDENTIAL_NAMES, credentialEnv, credentialSource, NOT_SECRET } from "../ai/credentials"
+import { CREDENTIAL_NAMES, credentialEnv, credentialSource, loadSavedCredentials, NOT_SECRET } from "../ai/credentials"
 import { jevRoute } from "../ai/jev"
 import { hasLlm, llmModelId } from "../ai/llm"
 import { searchUsesClairic } from "../ai/workersAi"
@@ -30,8 +30,10 @@ const loadSignedIn = (): CoreState["signedIn"] => ({ openrouter: signedIn("openr
 
 /** Each API key's source and mask, read now. */
 function loadApiKeys(): CoreState["apiKeys"] {
-  const env = credentialEnv()
-  return Object.fromEntries(CREDENTIAL_NAMES.map((name) => [name, { source: credentialSource(name), mask: NOT_SECRET.has(name) ? (env[name] ?? "") : "" }])) as CoreState["apiKeys"]
+  // The file read once, not once per name.
+  const saved = loadSavedCredentials()
+  const env = { ...process.env, ...saved }
+  return Object.fromEntries(CREDENTIAL_NAMES.map((name) => [name, { source: credentialSource(name, process.env, saved), mask: NOT_SECRET.has(name) ? (env[name] ?? "") : "" }])) as CoreState["apiKeys"]
 }
 
 /** What the clients know of the credentials: which services are set up. */

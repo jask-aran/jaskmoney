@@ -34,6 +34,7 @@ import {
   TAG_EXT_COLUMN,
   DEFAULT_CATEGORIES,
   MANDATORY_TAGS,
+  RULES_V2_TABLE,
   SCHEMA_SQL,
   SCHEMA_VERSION,
   SYNC_SQL,
@@ -111,19 +112,8 @@ export function openDb(path: string = defaultDbPath()): Db {
 /** Migration bodies are deliberately additive. A failed migration rolls back
  * before the database is touched, instead of silently recreating a profile. */
 const MIGRATIONS: Record<number, (db: Db) => void> = {
-  8: (db) => db.exec(`
-    CREATE TABLE IF NOT EXISTS rules_v2 (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      saved_filter_id TEXT NOT NULL,
-      set_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-      add_tag_ids TEXT NOT NULL DEFAULT '[]',
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_rules_v2_sort ON rules_v2(sort_order);
-  `),
+  8: (db) => db.exec(`${RULES_V2_TABLE}
+    CREATE INDEX IF NOT EXISTS idx_rules_v2_sort ON rules_v2(sort_order);`),
   9: (db) => {
     for (const column of ACCOUNT_SYNC_COLUMNS_LIST) {
       if (column.startsWith("sync_enabled")) continue // added by v10
