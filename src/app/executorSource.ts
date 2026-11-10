@@ -6,7 +6,7 @@ import { openBrowser } from "./llmSignIn"
 /**
  * Settings › AI models › Sources › Executor: signing in to Executor Cloud in
  * the browser (or making an account there), then testing that Gmail answers
- * through it. `ai` is replaced in tests.
+ * through it. `sources` is replaced in tests.
  */
 export const sources = {
   open: openBrowser as (url: string) => void,

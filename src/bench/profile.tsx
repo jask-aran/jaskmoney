@@ -1,5 +1,6 @@
 import { copyFileSync, mkdtempSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
+import { tmpdir } from "node:os"
+import { defaultDbPath } from "../db/client"
 import { join } from "node:path"
 import { testRender } from "@opentui/solid"
 import { App } from "../app/App"
@@ -18,7 +19,7 @@ for (const name of ["JASKMONEY_UP_TOKEN", "JASKMONEY_JEV_TOKEN", "JASKMONEY_CF_T
 process.env.JASKMONEY_DB = ":memory:"
 process.env.JASKMONEY_NO_BOOTSTRAP = "1"
 const dir = mkdtempSync(join(tmpdir(), "jaskmoney-prof-"))
-copyFileSync(process.env.JASKMONEY_BENCH_DB || join(homedir(), ".local/share/jaskmoney-opentui/transactions.db"), join(dir, "t.db"))
+copyFileSync(process.env.JASKMONEY_BENCH_DB || defaultDbPath(), join(dir, "t.db"))
 const t = await testRender(() => <App />, { width: Number(process.env.BENCH_WIDTH ?? 200), height: Number(process.env.BENCH_HEIGHT ?? 55) })
 data.init(join(dir, "t.db"))
 data.setAccountSelection("all")

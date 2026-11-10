@@ -49,7 +49,7 @@ spin() {
 }
 command -v curl >/dev/null || fail "needs curl"
 
-# The welcome screen's wordmark (src/ui/welcome/Welcome.tsx): its block
+# The welcome screen's wordmark (src/ui/welcome/header.ts): its block
 # letters in pink drifting to lavender, a sheen swept across them once on a
 # terminal. Drawn from ASCII (F █, u ▀, l ▄) so it doesn't hang on the locale.
 WORDMARK=("  F luF Fu Flu FuluF FuF Fl F Fuu FlF" "FlF FuF lF F F F u F FlF F uF FFl  F ")

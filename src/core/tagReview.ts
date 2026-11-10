@@ -35,7 +35,6 @@ export function createTagCandidates(ctx: CoreContext) {
         onCandidates: (found) => { if (isCurrent()) options.onCandidates(found) },
         onError: (error) => failures.push(error instanceof Error ? error.message : String(error)),
       })
-      if (!isCurrent()) return { failures, jev }
     }
     return { failures, jev }
   }

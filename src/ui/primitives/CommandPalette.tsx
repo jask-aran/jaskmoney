@@ -68,7 +68,7 @@ export function CommandPalette(props: { commands: Command[]; cursor: number; que
     <box position="absolute" zIndex={30} left={0} top={0} width="100%" height="100%" backgroundColor={BACKDROP} alignItems="center" paddingTop={Math.floor(dims().height / 4)}>
       <box width={width()} backgroundColor={theme.mantle} paddingTop={1} paddingBottom={1} flexDirection="column">
         <box paddingLeft={INSET} paddingRight={INSET} flexDirection="row" justifyContent="space-between">
-          <text wrapMode="none"><TextInput field={{ value: props.query, caret: props.query.length }} focused placeholder="Search commands" /><Show when={!props.query}><S fg={ink.faint}>{"Search commands"}</S></Show></text>
+          <text wrapMode="none"><TextInput field={{ value: props.query, caret: props.query.length }} focused /><Show when={!props.query}><S fg={ink.faint}>{"Search commands"}</S></Show></text>
           <text fg={tone.key}>esc</text>
         </box>
         <text> </text>

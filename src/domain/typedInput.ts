@@ -1,4 +1,4 @@
-import { MONTHS, addDays, addMonths, parseDay } from "./days"
+import { MONTHS, MONTH_NAMES, addDays, addMonths, parseDay } from "./days"
 
 /** Parse money with arithmetic, brackets (up to 128 levels) and unary minus; ignore $, commas and spaces, round to cents or return null. */
 export function amountFromText(text: string): number | null {
@@ -67,7 +67,6 @@ export function dayFromText(text: string, today: string): string | null {
   return parseDay(`${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`)
 }
 
-const MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
 
 /** A month named by its first three letters or more ("oct", "October"): 1–12. */
 function monthNumber(word: string): number | null {

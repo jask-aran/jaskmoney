@@ -60,7 +60,7 @@ export interface SettingsConfig {
 
 /** The former hard-coded importer is now an ordinary editable profile. It is
  * supplied whenever a config has no profiles, so clearing the database never
- * strands the bundled ANZ.csv fixture. */
+ * leaves an ANZ CSV without a profile to import it. */
 export const DEFAULT_IMPORT_PROFILES: ImportProfile[] = [{
   id: "anz", name: "ANZ Credit", account: "ANZ CREDIT", accountType: "credit",
   importPrefix: "anz", hasHeader: false, delimiter: ",", dateColumn: 0,

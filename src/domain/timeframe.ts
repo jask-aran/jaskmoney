@@ -283,7 +283,7 @@ export function timeframeNow(tf: TimeframeState, now: Date, cycle: CycleConfig =
  * months, its window ending two months before); a Custom range its own
  * length in days (stepCustom).
  */
-export function stepRange(tf: TimeframeState, delta: number, _now?: Date, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
+export function stepRange(tf: TimeframeState, delta: number, cycle: CycleConfig = MONTHLY_CYCLE): TimeframeState {
   if (tf.family === "period") return stepPeriod(tf, delta, cycle)
   if (tf.family === "lookback") return { ...tf, lookbackOffset: (tf.lookbackOffset ?? 0) + delta }
   return stepCustom(tf, delta)
@@ -335,8 +335,7 @@ export function comparisonWindows(startISO: string, endISO: string, todayISO: st
 }
 
 /** Settings › Appearance › Range on open: the chip the Overview opens on,
- * or "last", where it was left. Here, not in settingsConfig: the web app
- * shows the setting and can't import the storage behind settingsConfig. */
+ * or "last", where it was left. */
 export const OPEN_RANGES = ["1M", "3M", "6M", "1Y", "cycle", "month", "last"] as const
 export type OpenRange = typeof OPEN_RANGES[number]
 export const DEFAULT_OPEN_RANGE: OpenRange = "1M"

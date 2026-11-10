@@ -47,13 +47,6 @@ class TransactionsCommands {
   }
 }
 
-/**
- * The jaskmoney core: the one owner of the database, the settings file, the
- * credentials, Up and the models. Framework-free; clients (the TUI, the web
- * app) see it through `CoreState` patches and call its `commands` over a
- * link (client/link: in-process; server/serve: a WebSocket). See
- * core/protocol for the contract.
- */
 /** How a command hears about the call it serves. */
 export interface CallContext<P = never> {
   progress: (data: P) => void
@@ -67,6 +60,12 @@ export interface CallContext<P = never> {
 
 export { CONFIG_SETTLE_MS, initialCoreState } from "./runtime"
 
+/**
+ * The jaskmoney core: the one owner of the database, the settings file, the
+ * credentials, Up and the models. Framework-free; clients (the TUI) see it through `CoreState` patches and call its `commands` over a
+ * link (client/link: in-process; server/serve: a WebSocket). See
+ * core/protocol for the contract.
+ */
 export function createCore() {
   const ctx = new CoreRuntime()
   const transactions = new TransactionsCommands(ctx)

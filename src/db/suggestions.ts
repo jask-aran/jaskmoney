@@ -81,7 +81,6 @@ export function declineCategoryChoice(db: Db, description: string, categoryId: n
   db.query("UPDATE category_choices SET declined = ? WHERE description = ? AND category_id = ?").run(declined ? 1 : 0, description.trim().toLowerCase(), categoryId)
 }
 
-/** Rows whose suggestion was dismissed: not suggested for again. */
 /** Jev's merchant-breadth answers, by lowercased name. */
 export function loadMerchantBreadth(db: Db): Map<string, number> {
   return new Map(db.query<{ merchant: string; probability: number }, []>("SELECT merchant, probability FROM merchant_breadth").all().map((r) => [r.merchant, r.probability]))
@@ -108,6 +107,7 @@ export function saveMerchantNote(db: Db, merchant: string, note: string): void {
   })()
 }
 
+/** Rows whose suggestion was dismissed: not suggested for again. */
 export function loadDismissedSuggestionIds(db: Db): Set<number> {
   return new Set(db.query<{ id: number }, []>("SELECT transaction_id AS id FROM category_suggestions WHERE dismissed = 1").all().map((r) => r.id))
 }

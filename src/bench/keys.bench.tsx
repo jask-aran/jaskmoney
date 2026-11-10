@@ -1,6 +1,6 @@
 import { test } from "bun:test"
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
+import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
 import type { KeyEvent } from "@opentui/core"
 import { handleKey } from "../app/keys"
@@ -24,7 +24,9 @@ test("key-to-frame cost", async () => {
   testEnv("JASKMONEY_JEV_TOKEN", "")
   testEnv("JASKMONEY_CF_TOKEN", "")
   const dir = mkdtempSync(join(tmpdir(), "jaskmoney-bench-"))
-  const source = process.env.JASKMONEY_BENCH_DB || join(homedir(), ".local/share/jaskmoney-opentui/transactions.db")
+  // Your real database (a copy of it): the test setup points HOME at a
+  // throwaway folder, so not defaultDbPath().
+  const source = process.env.JASKMONEY_BENCH_DB || join(userInfo().homedir, ".jaskmoney", "transactions.db")
   copyFileSync(source, join(dir, "t.db"))
   const t = await renderApp({ width: Number(process.env.BENCH_WIDTH ?? 200), height: Number(process.env.BENCH_HEIGHT ?? 55) })
   data.init(join(dir, "t.db"))

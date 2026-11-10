@@ -12,10 +12,9 @@ import { S } from "./S"
  * list's own background (`bg`: canvas in a pane, mantle in a dialog), the
  * wash across the whole row. Clipped at the end rather than wrapped. An
  * armed row (`armed`, state/armed) says what its key does again, in red,
- * in place of its spans.
+ * in place of its spans. `id`: for a scrolling parent to bring the row
+ * into view. `onMouseDown`: a click on the row (Settings: select it).
  */
-/** `id`: for a scrolling parent to bring the row into view. */
-/** `onMouseDown`: a click on the row (Settings: select it). */
 export function ListRow(props: { cursor: boolean; selected?: boolean; bg: string; spans: Span[]; armed?: string; id?: string; onMouseDown?: (event: MouseEvent) => void }) {
   // Memos: the cursor prop is often an expression over the list's window
   // and cursor, read here once per change rather than once per span.

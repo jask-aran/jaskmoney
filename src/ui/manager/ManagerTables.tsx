@@ -69,10 +69,10 @@ function createManagerTables(input: Pick<ReturnType<typeof createMerchantRows>, 
   return { Tables }
 }
 
-/** A merchant's note for the table, or a prompt for one where it would
- * help (domain/suggest notePrompts): "always Groceries? n", "varies? n". */
 const noNote = () => null
 
+/** A merchant's note for the table, or a prompt for one where it would
+ * help (domain/suggest notePrompts): "always Groceries? n", "varies? n". */
 function merchantNote(merchant: string): { text: string; prompt: boolean } | null {
   const key = merchantKey(merchant)
   const note = data.state.merchantNotes[key]

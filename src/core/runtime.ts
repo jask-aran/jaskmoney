@@ -231,17 +231,17 @@ export class CoreRuntime implements CoreContext {
     return result
   }
 
-  /** Demo mode on (Settings, or --demo): the built-in made-up life,
-   * three years of it, in ~/.jaskmoney/demo.db. Nothing of yours goes in
-   * (screenshots are taken of it; `bun run eval` makes its own set from
-   * your history). Made afresh with its own categories and monthly
-   * budget. Returns how many rows. */
   /** A sync writes to the database it began on and then runs rules and
    * pushes on the open one: the database stays put until it's done. */
   ensureNoSync = (command: keyof typeof SYNC_CONFLICTING_COMMANDS): void => {
     if (this.state.upSyncing) throw new Error(`Wait for the Up sync to finish before ${SYNC_CONFLICTING_COMMANDS[command]}`)
   }
 
+  /** Demo mode on (Settings, or --demo): the built-in made-up life,
+   * three years of it, in ~/.jaskmoney/demo.db. Nothing of yours goes in
+   * (screenshots are taken of it; `bun run eval` makes its own set from
+   * your history). Made afresh with its own categories and monthly
+   * budget. Returns how many rows. */
   enterDemo = (): number => {
     if (this.state.demo) return this.state.transactions.length
     this.ensureNoSync("enterDemo")
@@ -289,7 +289,7 @@ export class CoreRuntime implements CoreContext {
       undoLabel: null,
       lastRepeat: null,
       aiRuleOffers: [],
-      dbPath: this.actualDbPath === ":memory:" ? ":memory:" : this.actualDbPath,
+      dbPath: this.actualDbPath,
       savedFilters: config.savedFilters,
       importProfiles: config.importProfiles,
       icons: config.icons !== false,

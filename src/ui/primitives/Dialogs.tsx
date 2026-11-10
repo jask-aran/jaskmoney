@@ -159,6 +159,3 @@ export function JumpOverlay(props: { active: boolean; tab: TabId }) {
     </Show>
   )
 }
-
-/** The top bar: the tabs, and the demo flag, accounts, version and sync on
- * its right. */

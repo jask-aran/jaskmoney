@@ -1,5 +1,5 @@
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
-import { Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, on, onCleanup, type JSX } from "solid-js"
 import { data } from "../../state/dataStore"
 import { CHART_SECTIONS, CHART_VIEWS, chartPaneOf, ui, type SectionId } from "../../state/uiStore"
 import { theme } from "../../theme"
@@ -10,7 +10,6 @@ import { tabColumns } from "../primitives/columns"
 import { regionRef } from "../regions"
 import { CustomRangeDialog } from "./CustomRangeDialog"
 
-import type { JSX } from "solid-js"
 import { AccountsCard, createAccountsCard } from "./AccountsCard"
 import { DateRangeCard, createDateChips } from "./DateRangeCard"
 import { OverviewChartCard, TABLE_VIEWS, chartRows, overviewChartModel } from "./overviewCharts"
@@ -132,9 +131,6 @@ function createChartModels(input: OverviewModel & OverviewLayout & ReturnType<ty
 
 function createLaunchReveal(input: OverviewModel & ReturnType<typeof createChartModels>) {
   const { shown, topModel } = input
-  // A component, not a function call in JSX: its card stays mounted while
-  // the view changes (a remounted card has no measured width for a frame or
-  // two, so its border picker and legend would blink out).
   // "first launch": once a launch, the charts draw in when first seen with
   // something to draw: as the data lands, or as the setup closes over
   // them, and not before the top chart has marks (a new user's first view
@@ -171,6 +167,9 @@ function createLaunchReveal(input: OverviewModel & ReturnType<typeof createChart
 
 function createChartPane(input: OverviewModel & OverviewLayout & ReturnType<typeof createChartModels> & ReturnType<typeof createLaunchReveal> & { focused: () => SectionId }) {
   const { models, paneWidth, calendar, trends, merchants, today, baseline, range, motionKey, motionMs } = input
+  // A component, not a function call in JSX: its card stays mounted while
+  // the view changes (a remounted card has no measured width for a frame or
+  // two, so its border picker and legend would blink out).
   return (p: { pane: number; height: number }) => {
     const index = () => ui.state.chartViews[p.pane]!
     const view = () => CHART_VIEWS[index()] ?? CHART_VIEWS[0]

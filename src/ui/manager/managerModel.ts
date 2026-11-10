@@ -192,7 +192,6 @@ export function createManagerPreviews() {
 
   const accountAction = () => data.state.accounts.find((account) => account.id === (ui.state.accountAction?.id ?? null))
 
-  /** Accept-all's preview: how many rows go to each suggested category. */
   /** Accept-all's preview: per suggested category, how many rows and which
    * (descriptions, most common first; money in marked), so a wrong pick
    * shows before it is taken. */

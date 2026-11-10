@@ -7,7 +7,7 @@ import type { Transaction } from "./types"
 /**
  * The context blocks: what the models are told about a row and about your
  * history, each gathered by one function here, so every question or tool
- * that uses a block says the same thing in the same words. domain/aiCatalog
+ * that uses a block says the same thing in the same words. ai/catalog
  * lists the blocks and which queries use each.
  */
 
@@ -46,6 +46,12 @@ interface RowFactsOptions {
   similar?: string[]
 }
 
+/** What a row bought, as a line: "Oral-B iO Electric…; 2× Brush Heads"
+ * (the first `limit` items, names cut to `nameMax`). */
+export function boughtText(t: Pick<Transaction, "bought">, limit = Infinity, nameMax = Infinity): string {
+  return (t.bought ?? []).slice(0, limit).map((i) => `${i.quantity > 1 ? `${i.quantity}× ` : ""}${i.name.slice(0, nameMax)}`).join("; ")
+}
+
 /**
  * The row block: a transaction as every model reads it, in one vocabulary.
  * The description is the merchant as the bank names it (Up has no separate
@@ -54,12 +60,6 @@ interface RowFactsOptions {
  * says nothing about the row). Empty facts are left out; the rest only
  * where asked for.
  */
-/** What a row bought, as a line: "Oral-B iO Electric…; 2× Brush Heads"
- * (the first `limit` items, names cut to `nameMax`). */
-export function boughtText(t: Pick<Transaction, "bought">, limit = Infinity, nameMax = Infinity): string {
-  return (t.bought ?? []).slice(0, limit).map((i) => `${i.quantity > 1 ? `${i.quantity}× ` : ""}${i.name.slice(0, nameMax)}`).join("; ")
-}
-
 export function rowFacts(t: Transaction, o: RowFactsOptions = {}): Record<string, string> {
   const tags = t.tagNames.filter((name) => name.toUpperCase() !== "IGNORE")
   return {

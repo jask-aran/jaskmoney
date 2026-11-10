@@ -1,7 +1,6 @@
 import { uncategorisedCategoryId, type Db } from "../db/client"
 import type { createUpClient } from "./client"
-import { assignProviderCategories, assignTypeCategories, syncCategoryTree } from "./categories"
-import { resolveUpName } from "./categories"
+import { assignProviderCategories, assignTypeCategories, resolveUpName, syncCategoryTree } from "./categories"
 import { syncTagLinks } from "./tags"
 import type { UpAccount, UpTransaction } from "./types"
 
@@ -19,7 +18,7 @@ type Batch = { accountId: string; local: LocalTransaction[]; since: string | und
  * choice): they're saved switched off, as Settings › Up Bank would leave
  * them, and their transactions never fetched. Every other account Up
  * lists is switched on. Without it, each account keeps its switch. */
-export async function syncUp(db: Db, client: Pick<ReturnType<typeof createUpClient>, "listAccounts" | "listAccountTransactions" | "listCategories">, { now = new Date(), keep, ensureCurrent, off }: { now?: Date; keep?: ReadonlySet<number>; ensureCurrent?: () => void; off?: ReadonlySet<string> } = {}) {
+export async function syncUp(db: Db, client: SyncClient, { now = new Date(), keep, ensureCurrent, off }: { now?: Date; keep?: ReadonlySet<number>; ensureCurrent?: () => void; off?: ReadonlySet<string> } = {}) {
   try {
     const tree = await client.listCategories()
     ensureCurrent?.()

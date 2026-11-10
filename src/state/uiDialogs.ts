@@ -1,7 +1,6 @@
 import type { SetStoreFunction } from "solid-js/store"
-import type { UiState } from "./uiStore"
 import { unwrap } from "solid-js/store"
-import type { Opening, ScopeId } from "./uiStore"
+import type { Opening, ScopeId, UiState } from "./uiStore"
 import { BUDGET_PANES } from "./uiTables"
 
 /** A dialog key and its scope while open. */

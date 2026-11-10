@@ -1,5 +1,7 @@
 /** Short calendar month names for display. */
 export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+/** Full month names, lower case, for reading typed text. */
+export const MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
 
 const DAY_MS = 86400000
 let clock: Date | null = null

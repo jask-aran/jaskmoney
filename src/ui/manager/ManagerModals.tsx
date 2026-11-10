@@ -84,8 +84,8 @@ export function createRuleModal(input: Pick<ReturnType<typeof createManagerPrevi
           <Show when={!!data.state.llm && ruleOffers().length >= ruleTop() && ruleOffers().length < ruleTop() + RULE_LINES}>
             <ListRow cursor={ui.state.ruleOffers!.cursor === ruleOffers().length} bg={theme.mantle} spans={[{ text: ` ${data.state.writingRules ? `Asking ${data.state.llm}…` : "Ask the AI for more rules"}`, fg: tone.ai }]} />
           </Show>
-          <Show when={ruleOffers().length + (!!data.state.llm ? 1 : 0) > RULE_LINES}>
-            <text fg={ink.note}>{`  ${ruleTop() + 1}–${Math.min(ruleTop() + RULE_LINES, ruleOffers().length + (!!data.state.llm ? 1 : 0))} of ${ruleOffers().length + (!!data.state.llm ? 1 : 0)}`}</text>
+          <Show when={ruleOffers().length + (data.state.llm ? 1 : 0) > RULE_LINES}>
+            <text fg={ink.note}>{`  ${ruleTop() + 1}–${Math.min(ruleTop() + RULE_LINES, ruleOffers().length + (data.state.llm ? 1 : 0))} of ${ruleOffers().length + (data.state.llm ? 1 : 0)}`}</text>
           </Show>
         </Modal>
       </Show>

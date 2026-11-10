@@ -110,6 +110,5 @@ export function SettingsTab(props: { focused: SectionId }) {
     <ImportOverlay />
     <ImportHistoryDialog />
     <FactoryResetOverlay />
-    {/* Last, so a confirmation armed from a dialog shows over it. */}
   </box>
 }

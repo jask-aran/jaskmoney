@@ -26,7 +26,6 @@ const renderer = await createCliRenderer({
   // handleKey (a "c" in Transactions opens the category picker).
   exitOnCtrlC: false,
   targetFps: 30,
-  // Use terminal size; captures target 140×44 when resized
 })
 
 // An error that escapes rendering must not leave the terminal in raw mode

@@ -1,4 +1,4 @@
-import { addDays, dayOfWeek, daysBetween, type WeekStart } from "./days"
+import { MONTHS, addDays, dayOfWeek, daysBetween, type WeekStart } from "./days"
 import { groupByMerchant } from "./merchants"
 import { isSpending } from "./moneyRules"
 import { computeCategorySpend, groupCategorySpend, type CategoryGroupSpend } from "./dashboard"
@@ -35,7 +35,6 @@ export interface TrendRow {
   partial: boolean
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 /** The range's months (or weeks), oldest first, none after today. */
 function buckets(start: string, end: string, today: string, weekStart: WeekStart) {

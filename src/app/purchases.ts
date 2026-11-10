@@ -10,7 +10,7 @@ import type { DataStore } from "../state/dataStore"
  * if nothing is found yet, again after a while, since the email can come
  * after the charge, until it's two weeks old (dueForLookup). The due rows
  * go in one Executor program. Quiet: a failure leaves rows waiting for the
- * next sync. `sources` is replaced in tests.
+ * next sync. `purchaseSources` is replaced in tests.
  */
 type Raw = { shipments: Array<{ at: string; mime: string | null; data: string | null }>; ebay: Array<{ order: string; emails: Array<{ at: string; subject: string }> }> }
 

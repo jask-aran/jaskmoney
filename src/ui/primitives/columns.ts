@@ -17,7 +17,7 @@ function sideColumnWidth(width: number, max: number, share: number): number {
 /** A tab's columns, the Overview's and the Budgets tab's: wide, the main
  * column and the side column a gap apart; in the grid, the main column
  * as two columns of panes (`left` and `right` wide, a gap apart).
- * Narrow, the main column is the tab's width and the side `narrowSide`. */
+ * Narrow, the main column is the tab's width and the side `side.narrow`. */
 interface Columns { wide: boolean; grid: boolean; side: number; main: number; left: number; right: number }
 
 export function tabColumns(width: number, side: { max: number; share: number; narrow: (width: number) => number }): Columns {

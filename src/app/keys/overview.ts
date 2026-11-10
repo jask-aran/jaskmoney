@@ -309,7 +309,7 @@ export function stepOverviewRange(ui: UiStore, delta: -1 | 1, data?: DataStore):
   const clock = appNow()
   const cycle = data?.cycle()
   const was = ui.state.timeframe
-  const tf = stepRange(was, delta, clock, cycle)
+  const tf = stepRange(was, delta, cycle)
   ui.setTimeframe(tf)
   ui.setDashChipCursor(activeChipIndex(tf))
   const kind = tf.family === "period" ? PERIOD_LABEL[tf.period] : tf.family === "lookback" ? tf.lookback : "Custom"

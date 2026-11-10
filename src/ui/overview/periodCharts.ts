@@ -61,7 +61,8 @@ export function spendingChart(
   height: number,
   todayISO: string,
   spendingRows: Transaction[],
-  /** Cumulative only: a spending limit drawn as a rule and named in the legend. */
+  /** A spending limit: Cumulative's pace line; in Daily, what it leaves a
+   * day, and in Weekly a week's share of it, as a rule. */
   budget?: number,
   names: PeriodNames = DEFAULT_NAMES,
   weekStart: WeekStart = "monday",
@@ -165,7 +166,7 @@ function cumulativeSpending({ dates, values, n, elapsed, upToToday, axis, width,
     rows: annotate(lineChart({ series: [...limit, { values: prev, ink: "prev" }, { values: ahead, ink: "partial" }, { values: upToToday(total), ink: "spend" }], length: n, width, height, min: 0, max: scale.max, markers: axis.markers }), marks),
     ticks: moneyTicks(0, scale.max, scale.step, height),
     labels: axis.labels,
-  today: axis.today,
+    today: axis.today,
     legend: [
       mark(LINE, "spend"),
       muted(`${names.current} ${formatWholeMoney(now)}`),

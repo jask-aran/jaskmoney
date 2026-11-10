@@ -1,5 +1,6 @@
 import type { CategoryChoice } from "../db/client"
 import { evalFilter, parseFilterStrict } from "./filter"
+import { filterTerm } from "./filterText"
 import { isUncategorised } from "./moneyRules"
 import { dryRunRules, filterRowNames } from "./rules"
 import { groupByDescription } from "./transactionGroups"
@@ -36,11 +37,6 @@ export type RuleOffer = {
   why?: string
 } & ({ source: "repeat" | "ai"; categoryId: number; tagId: null } | { source: "ai"; categoryId: null; tagId: number })
 
-/** `desc:"…"` for a description, quoted and escaped. */
-function descExpr(description: string): string {
-  return `desc:"${description.trim().replace(/["\\]/g, "\\$&")}"`
-}
-
 /** Offers among `choices` (all of them, or those for `descriptions`), most
  * chosen first. */
 export function ruleOffers(
@@ -66,7 +62,7 @@ export function ruleOffers(
     const own = byKey.get(choice.description)
     if (!own?.length) continue
     const description = mostCommonSpelling(own)
-    const expr = descExpr(description)
+    const expr = filterTerm("desc", description.trim())
     const { node } = parseFilterStrict(expr)
     if (!node) continue
     const found = filterRows().filter((r) => evalFilter(node, r.row)).map((r) => r.t)

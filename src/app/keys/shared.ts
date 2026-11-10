@@ -188,8 +188,6 @@ export function setGroupOpen(ui: UiStore, id: number, open: boolean): void {
   ui.setState({ taxonomyOpen: open ? [...ids, id] : ids })
 }
 
-/** AI models: one row per provider; enter edits its key, t tests it, del
- * removes the saved one (the environment's, if any, then applies). */
 /** `?` (some terminals send it as shift+/). */
 export function isSmartSearchKey(key: KeyEvent): boolean {
   return key.sequence === "?" || key.name === "?" || (key.name === "/" && key.shift)

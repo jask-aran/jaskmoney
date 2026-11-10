@@ -3,8 +3,6 @@ import type { JSX } from "@opentui/solid"
 import { TABS, TAB_DEFAULT_FOCUS, ui, type SectionId, type TabId } from "../state/uiStore"
 import { ink, tone } from "../theme"
 
-/** A tab, mounted from its first visit on and shown while active. Hidden,
- * its focus stays as it was: focus moves elsewhere don't redraw it. */
 /** Tabs built ahead of their first visit (App's warm-up after start). */
 const [warmed, setWarmed] = createSignal<ReadonlySet<TabId>>(new Set())
 
@@ -24,6 +22,8 @@ export function warmTabs(): () => void {
   return () => clearTimeout(timer)
 }
 
+/** A tab, mounted from its first visit on and shown while active. Hidden,
+ * its focus stays as it was: focus moves elsewhere don't redraw it. */
 export function KeptTab(props: { id: TabId; children: (focused: () => SectionId) => JSX.Element }) {
   const active = () => ui.state.activeTab === props.id
   const [visited, setVisited] = createSignal(active())

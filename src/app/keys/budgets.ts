@@ -200,11 +200,10 @@ function handleBudgetCategories(ui: UiStore, key: KeyEvent, data?: DataStore): v
   }
 }
 
-/** The state the hints read, from both stores. */
-/** H/L steps the Budgets tab's cycle pane, while one is on screen. */
 /** The Budgets pane's own keys: your pay, the target and the flow's view. */
 const budgetPlanHints = (state?: HintState): Hint[] => [{ key: "p", desc: "pay" }, { key: "t", desc: "target" }, { key: "s", desc: state?.rangeView === "spending" ? "net view" : "spending view", label: "Flow: where the spending or the net went" }]
 
+/** H/L steps the Budgets tab's cycle pane, while one is on screen. */
 const cycleChartHint = (state?: HintState) => ((state?.budgetCyclePanes ?? 1) > 0 ? [{ key: "H/L", desc: "cycle chart" }] : [])
 
 export const budgetsScopes = {

@@ -5,7 +5,7 @@
  * the rows derived from both, and the core's commands as methods.
  *
  * No database, file or model SDK here: the TUI runs it over an in-process
- * link (state/dataStore) and the web app over a WebSocket (web/main).
+ * link (state/dataStore), or over a WebSocket with --connect.
  */
 import { createStore } from "solid-js/store"
 import type { AccountSelection } from "../domain/accountTree"
@@ -41,7 +41,7 @@ export interface AskResult {
 }
 
 /** What this client alone decides: how it looks at the core's rows. */
-export interface ViewState {
+interface ViewState {
   /** The Transactions table shows only ordinary uncategorised rows. */
   uncategorisedOnly: boolean
   /** Finding transactions for a tag: the table shows its candidates. */

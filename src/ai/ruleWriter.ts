@@ -146,7 +146,7 @@ function createRuleWriterTools(data: HistoryData) {
     }),
   ]
   const finish = {
-    description: "Propose rules (at most 8; none is fine).",
+    description: `Propose rules (at most ${PROPOSALS}; none is fine).`,
     parameters: Type.Object({
       rules: Type.Array(Type.Object({ name: Type.String(), expr: Type.String(), why: Type.String(), ...target }), { maxItems: PROPOSALS }),
     }),

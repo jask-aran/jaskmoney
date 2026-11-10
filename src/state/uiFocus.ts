@@ -1,6 +1,5 @@
 import type { SetStoreFunction } from "solid-js/store"
-import type { UiState } from "./uiStore"
-import type { TabId, SectionId } from "./uiStore"
+import type { SectionId, TabId, UiState } from "./uiStore"
 import { budgetsHome, TAB_DEFAULT_FOCUS, TABS } from "./uiTables"
 import { ALL_CLOSED } from "./uiDialogs"
 

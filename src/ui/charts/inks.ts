@@ -1,6 +1,6 @@
 import { fade, ink, theme, tone, whenThemeChanges } from "../../theme"
 
-/** The views' data colours (series, marks, gridlines), shared by the TUI and the web app. */
+/** The views' data colours (series, marks, gridlines). */
 export const INKS: Record<string, string> = {}
 whenThemeChanges(() => Object.assign(INKS, {
   // Spending: the calendar's purple, lighter where a day or week isn't over.

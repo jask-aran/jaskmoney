@@ -48,6 +48,14 @@ export function chartViewsFrom(raw: unknown, views: number): ChartViews | undefi
   return [raw[0], raw[1], raw[2] ?? DEFAULT_CHART_VIEWS[2], raw[3] ?? DEFAULT_CHART_VIEWS[3]]
 }
 
+/** The Overview's chart pane views, in h/l order. Each has its title, what
+ * the chart shows and the pane's title (whose follows after a dot only
+ * where a pane covers less than its tab: a budget), and a group (spacing
+ * in the view picker only). Every pane offers every view, each drawn from
+ * the Date Range: a view that isn't (regular
+ * payments) belongs to the Budgets tab. Merchants and Trends are drawn as tables;
+ * they took Subscriptions' place (8) when it moved, so saved indexes keep
+ * their meaning. */
 export const CHART_VIEWS = [
   { view: "Cumulative", title: "Cumulative spending", group: "Spending", ranged: true },
   { view: "Daily", title: "Daily spending", group: "Spending", ranged: true },

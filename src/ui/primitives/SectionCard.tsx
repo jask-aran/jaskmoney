@@ -21,17 +21,17 @@ export function BorderText(props: { spans: Span[]; top: number; left: number; bg
   )
 }
 
+/** Where an inset card's title starts (its leading space; the words one
+ * further): the content's column plus one, so the title sits clearly in
+ * from the text below rather than nearly level with it. */
+const TITLE_INSET = 2
+
 /**
  * Matches Go renderManagerSectionBox:
  * - default title = brand pink bold; border = surface1
  * - focused = lavender title + border
  * - active adds " *" suffix (Go isActive)
  */
-/** Where an inset card's title starts (its leading space; the words one
- * further): the content's column plus one, so the title sits clearly in
- * from the text below rather than nearly level with it. */
-const TITLE_INSET = 2
-
 export function SectionCard(props: {
   title: string
   focused?: boolean

@@ -2,7 +2,7 @@ import type { JevClient } from "../ai/jev"
 import type { JevAnswer } from "../ai/judge"
 import type { ClairicAnswer, ClairicField, WorkersAiClient } from "../ai/workersAi"
 import { cycleFor, type CycleConfig } from "./budget"
-import { addDays, addMonths } from "./days"
+import { MONTH_NAMES, addDays, addMonths } from "./days"
 import { categoryTerm } from "./drill"
 import { anyOf, filterTerm, textContains } from "./filter"
 import { FLOWS, PERIODS, searchNumbers, searchPhrases, searchQuestions, searchTermQuestions, type Flow, type Period, coverQuestions, coveredCategoryIds, type CategoryUses, relatedCategoryIds } from "./questions"
@@ -125,7 +125,6 @@ export function parsedSearch(values: Record<string, ClairicAnswer> | null, answe
   }
 }
 
-const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
 
 /**
  * The search's dates, worked out in code where the models leave a gap:
@@ -146,9 +145,9 @@ function searchDates(from: string | null, to: string | null, query: string, toda
   const open = /\b(since|from|after|onwards?|starting)\b/i.test(query)
   if (from || to) return { from: back(from), to: back(to ?? (open ? null : from)), period: period === "any" ? "explicit" : period }
   if (period !== "any" && period !== "explicit") return { from: null, to: null, period }
-  const found = new RegExp(`\\b(in|during|for|of|since|from|after|throughout)?\\s*\\b(${MONTHS.join("|")})\\b(?:\\s+(\\d{4}))?`, "i").exec(query)
+  const found = new RegExp(`\\b(in|during|for|of|since|from|after|throughout)?\\s*\\b(${MONTH_NAMES.join("|")})\\b(?:\\s+(\\d{4}))?`, "i").exec(query)
   if (!found || (found[2]!.toLowerCase() === "may" && !found[1])) return { from: null, to: null, period }
-  const month = MONTHS.indexOf(found[2]!.toLowerCase()) + 1
+  const month = MONTH_NAMES.indexOf(found[2]!.toLowerCase()) + 1
   let year = found[3] ? Number(found[3]) : Number(today.slice(0, 4))
   const first = () => `${year}-${String(month).padStart(2, "0")}-01`
   if (!found[3] && first() > today) year--

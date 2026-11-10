@@ -18,11 +18,9 @@ import type { TextField } from "../domain/textField"
 
 import { initialUiState } from "./uiInitial"
 import { createFocusActions } from "./uiFocus"
-import { createDialogActions } from "./uiDialogs"
+import { createDialogActions, createPickerActions } from "./uiDialogs"
 import { createSettingsActions } from "./uiSettings"
-import { createPickerActions } from "./uiDialogs"
-import { createSelectionActions } from "./uiSelection"
-import { createCursorActions } from "./uiSelection"
+import { createCursorActions, createSelectionActions } from "./uiSelection"
 export { SETTINGS_SECTIONS, SETTINGS_RIGHT, SETTINGS_SECTION_LABELS, settingsSectionFocus, TAB_DEFAULT_FOCUS, CHART_SECTIONS, chartPaneOf, chartViewsFrom, CHART_VIEWS, BUDGET_VIEWS, CYCLE_VIEWS, BUDGET_PANES, CATEGORIES, cycleViewsFor, cycleView, budgetListInPane, budgetsHome, jumpTargets, TABS } from "./uiTables"
 
 export type TabId = "overview" | "manager" | "budgets" | "settings"
@@ -109,7 +107,7 @@ export type ScopeId =
 
 type SettingsList = "categories" | "tags"
 export type SettingsSection = "taxonomy" | "rules" | "filters" | "up" | "ai" | "appearance" | "database"
-export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" | "pay" 
+export type SettingsEditorKind = "category" | "tag" | "filter" | "rule" | "budget" | "cycle" | "pay"
 type ImportStage = "files" | "path" | "profile" | "profileEditor" | "preview"
 
 export interface UiState {
@@ -134,8 +132,6 @@ export interface UiState {
   managerVisible: number
   timeframe: TimeframeState
   dashChipCursor: number
-  /** The Custom range dialog: two dates being typed, the focused one and
-   * the last validation error. */
   /** The Custom range dialog. `focus`: one of its stops (CustomFocus).
    * The calendar shows `view` around its `cursor` day; `mark` is a first
    * mark waiting for the second (which applies), with the fields' text
@@ -215,7 +211,7 @@ export interface UiState {
   budgetOffset: number
   /** Cursor in the Up Bank sync account list. */
   upCursor: number
-  /** AI models pane: 0 Jev, 1 Workers AI. */
+  /** AI models pane: a row of aiPaneRows (the models, Executor, the uses). */
   aiCursor: number
   /** Transaction shown in the detail view; null when closed. */
   detail: { id: number; boughtTop: number; notes: { draft: string; caret: number } | null } | null
@@ -228,8 +224,6 @@ export interface UiState {
     scopeKey: string; amount: string
     /** Cycle editor. */
     unit: CycleUnit; anchor: CycleAnchor; anchorDate: string; payEarly: boolean
-    /** API key editors: the key as typed (never rendered), and Workers AI's account id. */
-
   }
   /** A row waiting for its key again to do something destructive (state/armed). */
   armed: Armed | null
@@ -247,9 +241,6 @@ export interface UiState {
   smartWriting: boolean
   /** Accept-all's preview: the rows it would categorise, until confirmed. */
   acceptPreview: number[] | null
-  /** Settings › AI models' dialog for one row (state/aiDialog): the action
-   * at the cursor, a field being typed (a key, the account id, the model),
-   * remove armed (enter again removes), and the last result. */
   /** Settings › AI models › Sources › Executor's dialog (app/executorSource):
    * the status as last read (null while reading), the action at the cursor,
    * the browser sign-in being waited on (its address), the last result. */
@@ -262,6 +253,9 @@ export interface UiState {
   importHistory: { top: number } | null
   /** The first-run setup, full screen (state/welcome). */
   welcome: WelcomeState | null
+  /** Settings › AI models' dialog for one row (state/aiDialog): the action
+   * at the cursor, a field being typed (a key, the account id, the model),
+   * remove armed (enter again removes), and the last result. */
   aiDialog: {
     row: "jev" | "workersAi" | "openrouter" | "openai" | "up"
     cursor: number
@@ -290,14 +284,7 @@ export interface UiState {
   searchHelp: { full: boolean; top: number; visible: number } | null
 }
 
-/** The Overview's chart pane views, in h/l order. Each has its title, what
- * the chart shows and the pane's title (whose follows after a dot only
- * where a pane covers less than its tab: a budget), and a group (spacing
- * in the view picker only). Every pane offers every view, each drawn from
- * the Date Range: a view that isn't (regular
- * payments) belongs to the Budgets tab. Merchants and Trends are drawn as tables;
- * they took Subscriptions' place (8) when it moved, so saved indexes keep
- * their meaning. */
+/** The view in each of the Overview's chart panes (an index into CHART_VIEWS). */
 export type ChartViews = [number, number, number, number]
 export type OverviewCharts = 1 | 2 | 4
 

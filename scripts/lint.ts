@@ -54,7 +54,7 @@ const TEST = /\.test\.(ts|tsx)$/
 const TS = /\.(ts|tsx)$/
 const TEST_CALL = /^\s*(test|it)(\.\w+)?\s*\(/gm
 /** Files run directly, not imported: their exports need no importer. */
-const ENTRY = /^(scripts\/|src\/index\.tsx$|src\/cli\.ts$|src\/server\/main\.ts$|src\/web\/main\.tsx$|src\/bench\/|src\/eval\/(run|search)\.ts$|src\/testSetup\.ts$)/
+const ENTRY = /^(scripts\/|src\/index\.tsx$|src\/cli\.ts$|src\/server\/main\.ts$|src\/bench\/|src\/eval\/(run|search)\.ts$|src\/testSetup\.ts$)/
 /** Lines in a repeated run. */
 const WINDOW = 8
 const RATCHET_SLACK = 1.3

@@ -1,12 +1,12 @@
 import { For, Show } from "solid-js"
 import type { UiState } from "../../state/uiStore"
+import { ink } from "../../theme"
+import { TextInput } from "./TextInput"
 
 type SignIn = NonNullable<UiState["llmSignIn"]>
 
 /** An address cut into full lines of `width`, every character kept, to copy by hand. */
 const chunks = (text: string, width: number) => Array.from({ length: Math.ceil(text.length / width) }, (_, i) => text.slice(i * width, (i + 1) * width))
-import { ink } from "../../theme"
-import { TextInput } from "./TextInput"
 
 /** A browser sign-in in progress (app/llmSignIn), inside the AI models
  * dialog: what's happening, the address (to open by hand if the browser

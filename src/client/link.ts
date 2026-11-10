@@ -1,6 +1,6 @@
 /**
  * How a client reaches the core: in the same process (localLink, the TUI)
- * or over a WebSocket (wsLink, the web app; the TUI with --connect). Both
+ * or over a WebSocket (wsLink, the TUI with --connect). Both
  * keep core/protocol's promise: a call's state patches arrive before its
  * result.
  */

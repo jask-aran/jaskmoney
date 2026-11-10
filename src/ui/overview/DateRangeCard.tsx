@@ -80,8 +80,8 @@ export function createDateChips(input: DateInput) {
   // The space between chips: none when the row is tight (an empty text
   // would still take a column).
   const gap = () => <text wrapMode="none" fg={ink.label}>{chipsFit().gap}</text>
-  /** A range chip as its own text: a click on it chooses it. */
   const stepPointer = (delta: -1 | 1) => onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", () => stepOverviewRange(ui, delta, data))
+  /** A range chip as its own text: a click on it chooses it. */
   const chipText = (label: string, idx: number, active: () => boolean) => (
     <text wrapMode="none" fg={ink.label} onMouseDown={onPointer((s) => s === "bar" || s === "overview" || s === "overview.range", () => {
       ui.applyJump("ov.range")

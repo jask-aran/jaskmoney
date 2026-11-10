@@ -15,12 +15,12 @@ const gmailListed = (status: ExecutorStatus) => status.tools.some((t) => /gmail/
 export function executorLines(status: ExecutorStatus | null): StatusLine[] {
   const lines: StatusLine[] = [{ label: "Service", value: `Executor Cloud · ${EXECUTOR_MCP.replace("https://", "")} · holds your accounts' sign-ins` }]
   if (!status) return [...lines, { label: "Account", value: "checking…" }]
-  if (!status.signedIn) return [...lines, { label: "Account", value: "not signed in: sign in, or make an Executor account, in your browser" }, { label: "For", value: "finding the order emails behind Amazon and eBay rows (next to build)" }]
+  if (!status.signedIn) return [...lines, { label: "Account", value: "not signed in: sign in, or make an Executor account, in your browser" }, { label: "For", value: "finding the order emails behind Amazon and eBay rows" }]
   return [
     ...lines,
     { label: "Account", value: status.error ? `signed in, but: ${status.error}` : "signed in" },
     { label: "Reaches", value: status.error ? "–" : `${status.tools.length} tool${status.tools.length === 1 ? "" : "s"} (${status.tools.slice(0, 4).join(", ")}${status.tools.length > 4 ? ", …" : ""}); your accounts are connected at executor.sh${gmailListed(status) ? "" : " (connect Gmail there)"}` },
-    { label: "For", value: "finding the order emails behind Amazon and eBay rows (next to build)" },
+    { label: "For", value: "finding the order emails behind Amazon and eBay rows" },
   ]
 }
 

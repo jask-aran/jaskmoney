@@ -1,6 +1,5 @@
 import type { SetStoreFunction } from "solid-js/store"
-import type { UiState } from "./uiStore"
-import type { SettingsEditorKind } from "./uiStore"
+import type { SettingsEditorKind, UiState } from "./uiStore"
 import type { Armed } from "./armed"
 import type { ImportProfile } from "../domain/types"
 import { editorFields } from "./settingsForm"

@@ -30,7 +30,7 @@ function handleModelPicker(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   })
 }
 
-/** Settings › AI models: the models, the uses, then the sources; enter opens the one at the cursor. */
+/** Settings › AI models: the models, the sources, then the uses; enter opens the one at the cursor. */
 function handleSettingsAi(ui: UiStore, key: KeyEvent): void {
   const { name } = key
   if (name === "escape") { ui.leaveSettings(); return }
@@ -106,9 +106,6 @@ function handleAiSent(ui: UiStore, key: KeyEvent): void {
   if (top != null) ui.setState("aiSent", { top })
 }
 
-/** The AI models dialog: j/k pick an action, enter runs it; a field (key,
- * account id, model) takes typing and pasting until enter saves or esc
- * backs out; remove needs enter twice; esc closes. */
 /** Executor's dialog (app/executorSource): j/k over the actions, enter runs
  * one; esc cancels a browser sign-in in progress and closes. */
 function handleExecutor(ui: UiStore, key: KeyEvent): void {
@@ -171,6 +168,9 @@ function handleAiField(ui: UiStore, key: KeyEvent, dialog: AiDialog, opened: Ope
   if (next) ui.setState("aiDialog", "field", { value: next.value, caret: next.caret })
 }
 
+/** The AI models dialog: j/k pick an action, enter runs it; a field (key,
+ * account id, model) takes typing and pasting until enter saves or esc
+ * backs out; remove needs enter twice; esc closes. */
 function handleAiDialog(ui: UiStore, key: KeyEvent, data?: DataStore): void {
   const dialog = ui.state.aiDialog
   if (!dialog || !data) return

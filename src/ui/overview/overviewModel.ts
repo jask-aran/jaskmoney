@@ -78,8 +78,6 @@ export function createOverviewTables(input: ReturnType<typeof createOverviewRang
     const ids = scopeIds()
     return rows.filter((t) => t.accountId != null && ids.has(t.accountId))
   }
-  // Regular payments now, from the scope's whole history (no range).
-  // Built only while a pane shows it.
   // The tables, each built only while a pane shows it: the range's spending
   // a month (or week) a row by category group, and by merchant against
   // Before (when the history covers it, as the Range pane compares).

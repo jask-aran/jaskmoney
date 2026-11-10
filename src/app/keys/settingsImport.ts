@@ -163,7 +163,8 @@ function handleSettingsImportPreview(ui: UiStore, key: KeyEvent, data?: DataStor
 }
 
 /** Settings › Up Bank's rows: the token (enter opens its dialog), sync
- * (enter syncs now) and the accounts (enter opens which ones sync). */
+ * (enter syncs now), the accounts (enter opens which ones sync) and the
+ * first-run setup (enter runs it again). */
 export const UP_ROWS = ["token", "sync", "accounts", "setup"] as const
 
 function handleSettingsUp(ui: UiStore, key: KeyEvent, data?: DataStore): void {

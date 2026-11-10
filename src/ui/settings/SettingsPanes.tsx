@@ -178,13 +178,13 @@ export function DatabasePane(props: { focused: boolean; width: number; height?: 
   </SectionCard>
 }
 
+/** Up Bank's height: borders and its rows, and the last sync's error. */
+const upHeight = () => 6 + (data.state.dbInfo?.upLastError ? 1 : 0)
+
 /** Up Bank: the token, sync and which accounts are linked; enter on a row
  * opens it (the token's dialog, a sync now, the accounts dialog). The token
  * itself is never rendered. Each row's mark says how it stands; Sync's
  * spins while a sync runs. */
-/** Up Bank's height: borders and its rows, and the last sync's error. */
-const upHeight = () => 6 + (data.state.dbInfo?.upLastError ? 1 : 0)
-
 export function UpPane(props: { focused: boolean; width: number; height?: number }) {
   const info = () => data.state.dbInfo
   const active = () => ui.state.settingsActive && ui.state.settingsSection === "up"

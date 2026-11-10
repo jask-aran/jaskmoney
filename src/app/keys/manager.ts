@@ -105,13 +105,13 @@ function handleRuleOffers(ui: UiStore, key: KeyEvent, data?: DataStore): void {
     askForRules(ui, data)
     return
   }
-  const moved = listMove(key, dialog.cursor, offers.length + (!!data?.state.llm ? 1 : 0))
+  const moved = listMove(key, dialog.cursor, offers.length + (data?.state.llm ? 1 : 0))
   if (moved != null) { ui.setState("ruleOffers", { cursor: moved }); return }
   const offer = offers[dialog.cursor]
   if (!offer || !data) return
   const settle = () => {
     if (!opened.open) return
-    const left = data.allRuleOffers().length + (!!data?.state.llm ? 1 : 0)
+    const left = data.allRuleOffers().length + (data?.state.llm ? 1 : 0)
     if (!left) close()
     else opened.patch({ cursor: Math.min(dialog.cursor, left - 1), busy: false })
   }
@@ -198,7 +198,7 @@ function txnsCommandKeys(ui: UiStore, key: KeyEvent, rows: Rows, data?: DataStor
   if (name === "r" && key.shift && data) {
     const n = data.allRuleOffers().length
     // With a model to ask, the list opens on the final action row when empty.
-    if (!n && !!!data?.state.llm) { ui.setStatus(`No rule to offer: one comes after you put a description in the same category ${RULE_AFTER} times`); return true }
+    if (!n && !data?.state.llm) { ui.setStatus(`No rule to offer: one comes after you put a description in the same category ${RULE_AFTER} times`); return true }
     ui.setState({ ruleOffers: { cursor: 0, busy: false } })
     ui.setStatus(n ? `${count(n, "rule")} offered` : "No rules offered yet · enter asks the AI")
     return true
