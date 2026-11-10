@@ -10,8 +10,8 @@ import { S } from "./S"
 
 /** Matches Go headerBarStyle + activeTabStyle / inactiveTabStyle; the
  * current tab is an active chip (chipLook). */
-export function TabBar(props: { active: TabId; items?: { id?: SectionId; text: string; fg?: string; onHover?: () => void }[]; reserveRight?: number }) {
-  const items = () => (props.items ?? [{ text: "All Accounts" }]).filter((item) => item.text)
+export function TabBar(props: { active: TabId; items: { id?: SectionId; text: string; fg?: string; onHover?: () => void }[]; reserveRight?: number }) {
+  const items = () => props.items.filter((item) => item.text)
   return (
     <box
       width="100%"
@@ -74,6 +74,5 @@ export function TabBar(props: { active: TabId; items?: { id?: SectionId; text: s
 }
 
 /** Only page scopes and the bar accept clicks through the shared chrome. */
-function pageScope(scope: ScopeId): boolean {
-  return ["bar", "overview", "overview.range", "manager.accounts", "manager.txns", "manager.merchants", "budgets", "budgets.categories", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.appearance", "settings.database", "settings.up", "settings.ai"].includes(scope)
-}
+const PAGE_SCOPES: ReadonlySet<ScopeId> = new Set<ScopeId>(["bar", "overview", "overview.range", "manager.accounts", "manager.txns", "manager.merchants", "budgets.categories", "budgets.plan", "budgets.chart", "settings", "settings.taxonomy", "settings.rules", "settings.filters", "settings.appearance", "settings.database", "settings.up", "settings.ai"])
+const pageScope = (scope: ScopeId) => PAGE_SCOPES.has(scope)

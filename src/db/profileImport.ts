@@ -1,11 +1,9 @@
 import { basename, resolve, sep } from "node:path"
 import { existsSync, realpathSync, statSync } from "node:fs"
 import { jaskmoneyHome } from "../storage/home"
-export { matchingProfiles } from "./profileMatch"
-import type { Db } from "../db/client"
-import { ensureAccount, uncategorisedCategoryId } from "../db/client"
-import type { ImportPreview, ImportPreviewError, ImportPreviewRow, ImportProfile, IngestResult } from "./types"
-import { parseDay } from "./days"
+import { ensureAccount, uncategorisedCategoryId, type Db } from "./client"
+import type { ImportPreview, ImportPreviewError, ImportPreviewRow, ImportProfile, IngestResult } from "../domain/types"
+import { parseDay } from "../domain/days"
 
 interface CsvRecord { fields: string[]; line: number }
 

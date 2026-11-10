@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { loadTransactions } from "../db/client"
+import { loadTransactions } from "./client"
 import { testDb } from "../testing/scoped"
-import { buildImportPreview, commitImportPreview, matchingProfiles } from "./profileImport"
-import type { ImportProfile } from "./types"
+import { buildImportPreview, commitImportPreview } from "./profileImport"
+import { matchingProfiles } from "../domain/profileMatch"
+import type { ImportProfile } from "../domain/types"
 
 const profile: ImportProfile = {
   id: "bank", name: "Bank", account: "Everyday", accountType: "debit", importPrefix: "bank", hasHeader: true,

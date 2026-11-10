@@ -78,7 +78,7 @@ export function createCore() {
    * (JSON over the wire) and, where it needs one, the call's context.
    */
   const commands = {
-    ...ctx.demoCommands,
+    ...ctx.runtimeCommands,
     ...transactions.transactionsCommands,
     ...ai.suggestionsCommands,
     ...ai.searchCommands,

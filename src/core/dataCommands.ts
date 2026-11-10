@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { clearAccountTransactions, clearAllData, removeAccountWithTransactions, setAccountSyncEnabled } from "../db/client"
-import { buildImportPreview, commitImportPreview } from "../domain/profileImport"
+import { buildImportPreview, commitImportPreview } from "../db/profileImport"
 import type { ImportPreview, ImportProfile } from "../domain/types"
 import { validateImportProfile } from "../state/settingsConfig"
 import type { CoreRuntime } from "./runtime"

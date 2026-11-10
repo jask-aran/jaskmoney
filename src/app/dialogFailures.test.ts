@@ -1,7 +1,7 @@
 import { expect, onTestFinished, spyOn, test } from "bun:test"
 import { data } from "../state/dataStore"
 import { ui } from "../state/uiStore"
-import { buildImportPreview } from "../domain/profileImport"
+import { buildImportPreview } from "../db/profileImport"
 import { DEFAULT_IMPORT_PROFILES } from "../state/settingsConfig"
 import type { RuleOffer } from "../domain/ruleOffers"
 import { key } from "../testing/keys"

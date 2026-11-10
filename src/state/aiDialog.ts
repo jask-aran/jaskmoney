@@ -208,7 +208,6 @@ function removable(row: KeyRow, ctx: AiContext): boolean {
 
 // ---------- Uses ----------
 
-export { AI_USES, type AiUse } from "../ai/catalog"
 
 /** How Jev is reached: TypeSafe (its key) wins over OpenRouter. */
 function jevVia(ctx: AiContext): "TypeSafe" | "OpenRouter" | null {

@@ -360,7 +360,7 @@ export class CoreRuntime implements CoreContext {
   }
 
   dispose = () => { process.off("exit", this.settings.flushConfig) }
-  demoCommands = {
+  runtimeCommands = {
     enterDemo: (_: object) => this.enterDemo(),
     leaveDemo: (_: object) => this.leaveDemo(),
     undo: (_: object) => this.undo(),

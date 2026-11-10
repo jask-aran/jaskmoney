@@ -280,3 +280,14 @@ test("the plan: your pay and your spending target give what goes to savers; each
   expect(hatchAt(overAt + 3)).toBe([...rows[overAt + 2]!].indexOf("╭"))
   t.renderer.destroy()
 })
+
+test("a click on a tab in the bar switches tab from the Budgets pane's plan and from a cycle chart", async () => {
+  const { t, frame } = await budgetsTab()
+  for (const focusedSection of ["bud.plan", "bud.chart"] as const) {
+    handleKey(ui, key("3"), data)
+    ui.setState({ focusedSection })
+    const bar = (await frame()).split("\n")[0]!
+    await t.mockMouse.click(bar.indexOf("Transactions") + 1, 0)
+    expect(ui.state.activeTab).toBe("manager")
+  }
+})

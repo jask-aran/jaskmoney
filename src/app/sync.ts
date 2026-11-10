@@ -70,4 +70,3 @@ export async function runSync(ui: UiStore, data: DataStore, { manual, off }: { m
   }
 }
 
-export { syncAgo } from "../domain/days"
