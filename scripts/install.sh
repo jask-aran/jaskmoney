@@ -169,7 +169,7 @@ cd "$SRC/repo"
 
 need="$(sed -n 's/.*"packageManager": *"bun@\([0-9.]*\)".*/\1/p' package.json)"
 [ -n "$need" ] || fail "can't read the Bun version from package.json"
-new_enough() { "$1" -e "process.exit(Bun.semver.order(Bun.version, '$need') < 0 ? 1 : 0)" 2>/dev/null; }
+new_enough() { (cd / && "$1" -e "process.exit(Bun.semver.order(Bun.version, '$need') < 0 ? 1 : 0)" 2>/dev/null); }
 BUN="$(command -v bun || true)"
 [ -n "$BUN" ] || { [ -x "${BUN_INSTALL:-$HOME/.bun}/bin/bun" ] && BUN="${BUN_INSTALL:-$HOME/.bun}/bin/bun"; } || true
 if [ -z "$BUN" ] || ! new_enough "$BUN"; then
